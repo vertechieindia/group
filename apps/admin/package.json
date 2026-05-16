@@ -1,0 +1,8 @@
+{
+  "name": "@vertechie/admin",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "echo admin shell is composed into apps/web for this module"
+  }
+}

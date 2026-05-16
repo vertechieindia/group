@@ -1,0 +1,8 @@
+{
+  "name": "@vertechie/api",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "echo api surface is implemented through Next.js route handlers and Supabase Edge Functions"
+  }
+}

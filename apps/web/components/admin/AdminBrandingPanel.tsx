@@ -1,0 +1,176 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import { ImageUp, Palette, Save } from "lucide-react";
+import { Button, Card, Input } from "@vertechie/ui";
+import { useBranding, useCurrentUser, useUpdateBranding } from "@/features/admin/hooks";
+import { createBrowserSupabaseClient } from "@/features/timesheets/supabase-browser";
+import { US_STATES } from "@/lib/offer-compliance";
+
+export function AdminBrandingPanel() {
+  const { data: me } = useCurrentUser();
+  const entityId = me?.entity.id;
+  const { data } = useBranding(entityId);
+  const updateBranding = useUpdateBranding();
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [form, setForm] = useState({
+    brandName: "",
+    brandLogoUrl: "",
+    primaryColor: "#0f766e",
+    accentColor: "#f59e0b",
+    legalName: "",
+    companyAddress: "",
+    companyEin: "",
+    eVerifyNumber: "",
+    companyHomeState: "KS",
+    companyPhone: "",
+    companyWebsite: "",
+    hrEmail: ""
+  });
+
+  useEffect(() => {
+    if (!data) return;
+    setForm({
+      brandName: data.brandName || data.name,
+      brandLogoUrl: data.brandLogoUrl || "",
+      primaryColor: data.primaryColor,
+      accentColor: data.accentColor,
+      legalName: data.legalName || data.brandName || data.name,
+      companyAddress: data.companyAddress || "",
+      companyEin: data.companyEin || "",
+      eVerifyNumber: data.eVerifyNumber || "",
+      companyHomeState: data.companyHomeState || "KS",
+      companyPhone: data.companyPhone || "",
+      companyWebsite: data.companyWebsite || "",
+      hrEmail: data.hrEmail || ""
+    });
+  }, [data]);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!entityId) return;
+    await updateBranding.mutateAsync({
+      entityId,
+      brandName: form.brandName,
+      brandLogoUrl: form.brandLogoUrl || null,
+      primaryColor: form.primaryColor,
+      accentColor: form.accentColor,
+      legalName: form.legalName || null,
+      companyAddress: form.companyAddress || null,
+      companyEin: form.companyEin || null,
+      eVerifyNumber: form.eVerifyNumber || null,
+      companyHomeState: form.companyHomeState,
+      companyPhone: form.companyPhone || null,
+      companyWebsite: form.companyWebsite || null,
+      hrEmail: form.hrEmail || null
+    });
+  }
+
+  async function uploadLogo(file: File | null) {
+    if (!file || !entityId) return;
+    setUploadError(null);
+    const allowed = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
+    if (!allowed.has(file.type)) {
+      setUploadError("Upload a PNG, JPG, WEBP, or SVG logo.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("Logo file must be 5 MB or smaller.");
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const extension = file.name.split(".").pop()?.toLowerCase() || "png";
+      const path = `${entityId}/logos/${crypto.randomUUID()}.${extension}`;
+      const { error } = await supabase.storage.from("brand-assets").upload(path, file, {
+        upsert: false,
+        contentType: file.type
+      });
+      if (error) throw error;
+      const { data: publicUrl } = supabase.storage.from("brand-assets").getPublicUrl(path);
+      setForm((current) => ({ ...current, brandLogoUrl: publicUrl.publicUrl }));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Logo upload failed.");
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+      <Card className="p-5">
+        <div className="flex items-center gap-2"><Palette className="size-5 text-primary" /><h1 className="text-2xl font-semibold">Company Branding</h1></div>
+        <p className="mt-2 text-sm text-muted-foreground">Company admins can brand the workspace their users see after login.</p>
+        <form className="mt-5 grid gap-4" onSubmit={submit}>
+          <label className="text-sm font-medium">Brand name<Input required value={form.brandName} onChange={(event) => setForm((current) => ({ ...current, brandName: event.target.value }))} /></label>
+          <label className="text-sm font-medium">Legal company name<Input value={form.legalName} onChange={(event) => setForm((current) => ({ ...current, legalName: event.target.value }))} placeholder="Company legal name for offer letters" /></label>
+          <div className="grid gap-2">
+            <label className="text-sm font-medium">Logo upload</label>
+            <div className="grid gap-3 rounded-lg border border-dashed border-border bg-background/70 p-3">
+              <input
+                className="text-sm"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                onChange={(event) => uploadLogo(event.target.files?.[0] ?? null)}
+              />
+              <div className="text-xs text-muted-foreground">PNG, JPG, WEBP, or SVG. Max 5 MB. Upload saves to Supabase Storage, then you can save branding.</div>
+              {uploadError && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{uploadError}</div>}
+              {isUploading && <div className="text-sm text-primary">Uploading logo...</div>}
+            </div>
+          </div>
+          <label className="text-sm font-medium">Logo URL<Input value={form.brandLogoUrl} onChange={(event) => setForm((current) => ({ ...current, brandLogoUrl: event.target.value }))} placeholder="https://..." /></label>
+          <label className="text-sm font-medium">Company address<textarea className="mt-1 min-h-[96px] w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" value={form.companyAddress} onChange={(event) => setForm((current) => ({ ...current, companyAddress: event.target.value }))} placeholder="Street, city, state, ZIP" /></label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium">Company EIN<Input value={form.companyEin} onChange={(event) => setForm((current) => ({ ...current, companyEin: event.target.value }))} placeholder="XX-XXXXXXX" /></label>
+            <label className="text-sm font-medium">E-Verify number<Input value={form.eVerifyNumber} onChange={(event) => setForm((current) => ({ ...current, eVerifyNumber: event.target.value }))} /></label>
+            <label className="text-sm font-medium">Home state
+              <select className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-primary/30" value={form.companyHomeState} onChange={(event) => setForm((current) => ({ ...current, companyHomeState: event.target.value }))}>
+                {US_STATES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+              </select>
+            </label>
+            <label className="text-sm font-medium">Company phone<Input value={form.companyPhone} onChange={(event) => setForm((current) => ({ ...current, companyPhone: event.target.value }))} /></label>
+            <label className="text-sm font-medium">Company website<Input value={form.companyWebsite} onChange={(event) => setForm((current) => ({ ...current, companyWebsite: event.target.value }))} placeholder="https://company.com" /></label>
+            <label className="text-sm font-medium">HR email<Input inputMode="email" value={form.hrEmail} onChange={(event) => setForm((current) => ({ ...current, hrEmail: event.target.value }))} placeholder="hr@company.com" /></label>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium">Primary color<Input type="color" value={form.primaryColor} onChange={(event) => setForm((current) => ({ ...current, primaryColor: event.target.value }))} /></label>
+            <label className="text-sm font-medium">Accent color<Input type="color" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /></label>
+          </div>
+          <div className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
+            Workspace URL is assigned automatically from the company name: /{slugify(form.brandName)}/timesheets
+          </div>
+          {updateBranding.error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{updateBranding.error.message}</div>}
+          <Button disabled={updateBranding.isPending} type="submit"><Save className="size-4" />Save branding</Button>
+        </form>
+      </Card>
+      <Card className="h-fit p-5">
+        <div className="text-sm font-semibold">Preview</div>
+        <div className="mt-4 rounded-lg border border-border p-4" style={{ borderColor: form.primaryColor }}>
+          <div className="flex items-center gap-3">
+            {form.brandLogoUrl ? (
+              <Image alt={`${form.brandName} logo`} className="size-12 rounded-md object-contain" height={48} src={form.brandLogoUrl} width={48} unoptimized />
+            ) : (
+              <div className="grid size-12 place-items-center rounded-md text-sm font-semibold text-white" style={{ backgroundColor: form.primaryColor }}>
+                {form.brandName.slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <div className="font-semibold">{form.brandName}</div>
+              <div className="text-sm text-muted-foreground">/{slugify(form.brandName)}/timesheets</div>
+            </div>
+          </div>
+          <div className="mt-4 h-2 rounded-full" style={{ backgroundColor: form.accentColor }} />
+          {form.brandLogoUrl && <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground"><ImageUp className="size-4 text-primary" /> Uploaded logo will appear in the user workspace after saving.</div>}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function slugify(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "company";
+}

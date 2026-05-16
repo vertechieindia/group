@@ -1,0 +1,13 @@
+{
+  "name": "@vertechie/db",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
+    "@vertechie/types": "workspace:*"
+  }
+}

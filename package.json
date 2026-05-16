@@ -1,0 +1,16 @@
+{
+  "name": "vertechie-group-workforce-os",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "pnpm --filter @vertechie/web dev",
+    "build": "pnpm --filter @vertechie/web build",
+    "lint": "pnpm --filter @vertechie/web lint",
+    "test": "pnpm --filter @vertechie/web test",
+    "typecheck": "pnpm --filter @vertechie/web typecheck"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3"
+  }
+}

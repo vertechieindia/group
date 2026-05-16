@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 204 31% 97%;
+  --foreground: 222 38% 13%;
+  --border: 210 24% 86%;
+  --primary: 174 83% 24%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 198 24% 92%;
+  --muted-foreground: 218 16% 39%;
+  --accent: 30 92% 57%;
+  --accent-foreground: 222 38% 13%;
+  --destructive: 0 73% 47%;
+  --destructive-foreground: 0 0% 100%;
+}
+
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.18);
+}
+
+.enterprise-grid {
+  background-image:
+    linear-gradient(hsl(var(--border) / 0.44) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.44) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, black 45%, transparent 95%);
+}
