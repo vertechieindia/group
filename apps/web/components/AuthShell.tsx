@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { Button, Card, Input } from "@vertechie/ui";
 import { createBrowserSupabaseClient } from "@/features/timesheets/supabase-browser";
-import { useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useState } from "react";
 import { TenantFavicon } from "@/components/branding/TenantFavicon";
 
 type PublicBranding = {
@@ -91,6 +91,14 @@ export function AuthShell({ mode }: { mode: "login" | "signup" | "forgot" | "inv
     }
   }
 
+  function updateEmail(event: ChangeEvent<HTMLInputElement>) {
+    setEmail(event.target.value);
+  }
+
+  function updatePassword(event: ChangeEvent<HTMLInputElement>) {
+    setPassword(event.target.value);
+  }
+
   return (
     <main className="relative grid min-h-screen place-items-center overflow-hidden bg-background px-4">
       <TenantFavicon logoUrl={branding.brandLogoUrl} />
@@ -110,9 +118,9 @@ export function AuthShell({ mode }: { mode: "login" | "signup" | "forgot" | "inv
           <p className="mt-2 text-sm text-muted-foreground">Workforce OS access is protected by Supabase Auth, RBAC, entity scope, and audit logging.</p>
         </div>
         <form className="grid gap-3" onSubmit={submit}>
-          <Input autoComplete="email" inputMode="email" required type="text" placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Input autoComplete="email" inputMode="email" required type="text" placeholder="Email" value={email} onChange={updateEmail} />
           {mode !== "forgot" && (
-            <Input autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={8} type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
+            <Input autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={8} type="password" placeholder="Password" value={password} onChange={updatePassword} />
           )}
           {error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>}
           {status && <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">{status}</div>}
