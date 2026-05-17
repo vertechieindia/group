@@ -167,6 +167,7 @@ export const entityBrandingSchema = z.object({
 
 export const createAdminUserSchema = z.object({
   entityId: uuidSchema,
+  companyName: z.string().trim().min(2).max(180).optional(),
   email: z.string().trim().email(),
   password: z.string().min(8).max(120),
   fullName: z.string().trim().min(2).max(180),
@@ -357,6 +358,9 @@ export type BusinessEntity = {
 export type AdminUser = {
   id: string;
   entityId: string;
+  entityName?: string | null;
+  entitySlug?: string | null;
+  entityIsActive?: boolean;
   email: string;
   fullName: string;
   role: AppRole;
@@ -364,6 +368,8 @@ export type AdminUser = {
   title?: string | null;
   employeeNumber?: string | null;
   isActive: boolean;
+  setupInviteUrl?: string | null;
+  emailDeliveryStatus?: "sent" | "not_configured" | "failed" | null;
   companyRoles: Array<{ id: string; name: string; slug: string; isSystem?: boolean }>;
 };
 
@@ -404,6 +410,8 @@ export type LifecycleEmployee = {
   id: string;
   profileId: string;
   entityId: string;
+  entityName?: string | null;
+  entitySlug?: string | null;
   fullName: string;
   email: string;
   employeeNumber: string;

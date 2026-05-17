@@ -15,7 +15,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const logo = data?.entity.brandLogoUrl || "/logos/vertechie-logo.jpg";
   const canAdmin = data?.role === "super_admin" || data?.role === "admin" || data?.role === "company_admin";
   const canAccounts = canAdmin || data?.role === "accounts_manager";
-  const canHr = canAdmin || data?.role === "hr";
+  const canHr = canAdmin || data?.role === "hr" || data?.role === "accounts_manager";
   const canSupervisor = canAdmin || data?.role === "hr" || data?.role === "team_lead" || data?.role === "operations";
   const canSelfService = data?.role === "employee" || data?.role === "team_lead" || data?.role === "hr" || data?.role === "accounts_manager";
   const companySlug = data?.entity.portalSlug || data?.entity.slug;

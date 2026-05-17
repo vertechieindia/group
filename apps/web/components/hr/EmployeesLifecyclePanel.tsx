@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Save, UserRoundCog } from "lucide-react";
+import { Building2, Save, UserRoundCog } from "lucide-react";
 import { Badge, Button, Card, Input, Select, Textarea } from "@vertechie/ui";
 import type { LifecycleEmployee } from "@vertechie/types";
 import { useCurrentUser } from "@/features/admin/hooks";
@@ -21,18 +21,30 @@ const resumeStatuses = [
 ] as const;
 
 const offerLetterStatuses = [
-  ["usc_offer_letter", "USC offer letter"],
-  ["gc_offer_letter", "GC Offer Letter"],
-  ["h1b_offer_letter", "H1B offer letter"],
-  ["stem", "STEM"],
+  ["no_offer_letter", "NA"],
   ["initial_opt", "Initial OPT"],
-  ["cpt_offer_letter", "CPT Offer Letter"],
-  ["no_offer_letter", "No offer Letter"],
-  ["gc_ead_offer_letter", "GC EAD offer Letter"],
-  ["h4_ead_offer_letter", "H4 EAD offer Letter"],
-  ["l2s_offer_letter", "L2S offer Letter"],
-  ["terminated", "Terminated"]
+  ["stem", "STEM"],
+  ["h1b_offer_letter", "H1B"],
+  ["h4_ead_offer_letter", "H4 EAD"],
+  ["gc_ead_offer_letter", "GC EAD"],
+  ["gc_offer_letter", "GC"],
+  ["usc_offer_letter", "USC"],
+  ["cpt_offer_letter", "CPT"]
 ] as const;
+
+const offerLetterLabels: Record<LifecycleEmployee["offerLetterStatus"], string> = {
+  no_offer_letter: "NA",
+  initial_opt: "Initial OPT",
+  stem: "STEM",
+  h1b_offer_letter: "H1B",
+  h4_ead_offer_letter: "H4 EAD",
+  gc_ead_offer_letter: "GC EAD",
+  gc_offer_letter: "GC",
+  usc_offer_letter: "USC",
+  cpt_offer_letter: "CPT",
+  l2s_offer_letter: "NA",
+  terminated: "NA"
+};
 
 const interviewStatuses = [
   ["pending", "Pending"],
@@ -73,11 +85,30 @@ const candidateStatuses = [
 
 export function EmployeesLifecyclePanel() {
   const { data: me } = useCurrentUser();
-  const entityId = me?.entity.id;
-  const { data: employees, isLoading } = useLifecycleEmployees(entityId);
+  const isSuperAdmin = me?.role === "super_admin";
+  const entityId = isSuperAdmin ? undefined : me?.entity.id;
+  const { data: employees, isLoading } = useLifecycleEmployees(entityId, Boolean(me));
   const updateEmployee = useUpdateLifecycleEmployee();
   const [selectedId, setSelectedId] = useState("");
   const selected = useMemo(() => employees?.find((employee) => employee.id === selectedId), [employees, selectedId]);
+  const companyGroups = useMemo(() => {
+    const groups = new Map<string, { id: string; name: string; slug: string | null; employees: LifecycleEmployee[] }>();
+    for (const employee of employees ?? []) {
+      const id = employee.entityId;
+      const existing = groups.get(id);
+      if (existing) {
+        existing.employees.push(employee);
+      } else {
+        groups.set(id, {
+          id,
+          name: employee.entityName || me?.entity.name || "Company",
+          slug: employee.entitySlug ?? null,
+          employees: [employee]
+        });
+      }
+    }
+    return Array.from(groups.values()).sort((left, right) => left.name.localeCompare(right.name));
+  }, [employees, me?.entity.name]);
   const [draft, setDraft] = useState({
     employeeType: "paid_project",
     supervisorId: "",
@@ -119,9 +150,9 @@ export function EmployeesLifecyclePanel() {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || !entityId) return;
+    if (!selected) return;
     await updateEmployee.mutateAsync({
-      entityId,
+      entityId: selected.entityId,
       employeeId: selected.id,
       employeeType: draft.employeeType as LifecycleEmployee["employeeType"],
       supervisorId: draft.supervisorId || null,
@@ -148,25 +179,43 @@ export function EmployeesLifecyclePanel() {
           <h1 className="text-2xl font-semibold">Employee Lifecycle</h1>
           <p className="text-sm text-muted-foreground">Company-scoped employee profiles, onboarding status, supervisor assignment, and workforce category.</p>
         </div>
-        <div className="w-full overflow-x-auto rounded-lg border border-border bg-white">
-          <table className="min-w-[980px] w-full text-left text-sm">
-            <thead className="bg-muted text-xs uppercase text-muted-foreground">
-              <tr><th className="px-4 py-3">Employee</th><th className="px-4 py-3">Category</th><th className="px-4 py-3">Marketing status</th><th className="px-4 py-3">Recruiter</th><th className="px-4 py-3">Candidate status</th><th className="px-4 py-3">Onboarding</th></tr>
-            </thead>
-            <tbody>
-              {(employees ?? []).map((employee) => (
-                <tr className={`cursor-pointer border-t border-border hover:bg-muted/40 ${selectedId === employee.id ? "bg-primary/5" : ""}`} key={employee.id} onClick={() => setSelectedId(employee.id)}>
-                  <td className="px-4 py-3 font-medium">{employee.fullName}<div className="text-xs text-muted-foreground">{employee.uniqueEmployeeCode || employee.employeeNumber} · {employee.email}</div></td>
-                  <td className="px-4 py-3">{employeeTypeLabel[employee.employeeType]}</td>
-                  <td className="px-4 py-3"><StatusBadge status={employee.marketingStatus} label={labelFor(marketingStatuses, employee.marketingStatus)} /></td>
-                  <td className="px-4 py-3">{employee.recruiterName || "Not assigned"}</td>
-                  <td className="px-4 py-3"><StatusBadge status={employee.candidateStatus} label={labelFor(candidateStatuses, employee.candidateStatus)} /></td>
-                  <td className="px-4 py-3"><Badge>{employee.onboardingStatus.replaceAll("_", " ")}</Badge></td>
-                </tr>
-              ))}
-              {!isLoading && !employees?.length && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={6}>No employees found for this company.</td></tr>}
-            </tbody>
-          </table>
+        <div className="grid gap-4">
+          {companyGroups.map((company) => (
+            <Card className="overflow-hidden" key={company.id}>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Building2 className="size-5 text-primary" />
+                  <div>
+                    <div className="font-semibold">{company.name}</div>
+                    <div className="text-xs text-muted-foreground">{company.employees.length} employees{company.slug ? ` · /${company.slug}` : ""}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="w-full overflow-x-auto">
+                <table className="min-w-[1120px] w-full text-left text-sm">
+                  <thead className="bg-muted text-xs uppercase text-muted-foreground">
+                    <tr><th className="px-4 py-3">Employee</th><th className="px-4 py-3">Category</th><th className="px-4 py-3">Offer Letter</th><th className="px-4 py-3">Marketing status</th><th className="px-4 py-3">Recruiter</th><th className="px-4 py-3">Candidate status</th><th className="px-4 py-3">Onboarding</th></tr>
+                  </thead>
+                  <tbody>
+                    {company.employees.map((employee) => (
+                      <tr className={`cursor-pointer border-t border-border hover:bg-muted/40 ${selectedId === employee.id ? "bg-primary/5" : ""}`} key={employee.id} onClick={() => setSelectedId(employee.id)}>
+                        <td className="px-4 py-3 font-medium">{employee.fullName}<div className="text-xs text-muted-foreground">{employee.uniqueEmployeeCode || employee.employeeNumber} · {employee.email}</div></td>
+                        <td className="px-4 py-3">{employeeTypeLabel[employee.employeeType]}</td>
+                        <td className="px-4 py-3"><OfferBadge status={employee.offerLetterStatus} /></td>
+                        <td className="px-4 py-3"><StatusBadge status={employee.marketingStatus} label={labelFor(marketingStatuses, employee.marketingStatus)} /></td>
+                        <td className="px-4 py-3">{employee.recruiterName || "Not assigned"}</td>
+                        <td className="px-4 py-3"><StatusBadge status={employee.candidateStatus} label={labelFor(candidateStatuses, employee.candidateStatus)} /></td>
+                        <td className="px-4 py-3"><Badge>{employee.onboardingStatus.replaceAll("_", " ")}</Badge></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ))}
+          {!isLoading && !employees?.length && (
+            <Card className="px-4 py-10 text-center text-sm text-muted-foreground">No employees found.</Card>
+          )}
         </div>
       </div>
       {selected && <Card className="h-fit p-5">
@@ -232,5 +281,13 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
       : status === "paused"
         ? "border-yellow-200 bg-yellow-50 text-yellow-800"
         : "border-amber-200 bg-amber-50 text-amber-800";
+  return <Badge className={className}>{label}</Badge>;
+}
+
+function OfferBadge({ status }: { status: LifecycleEmployee["offerLetterStatus"] }) {
+  const label = offerLetterLabels[status];
+  const className = label === "NA"
+    ? "border-slate-200 bg-slate-50 text-slate-700"
+    : "border-emerald-200 bg-emerald-50 text-emerald-800";
   return <Badge className={className}>{label}</Badge>;
 }

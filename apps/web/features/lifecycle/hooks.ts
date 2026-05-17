@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateDiscordGroupInput, CreateLearningMaterialInput, CreateOfferTemplateInput, CreateOnboardingFormTemplateInput, CreateOnboardingInviteInput, CreateProjectAssignmentInput, SendOfferLetterInput, UpdateEmployeeLifecycleInput, UpdateLearningAssignmentInput } from "@vertechie/types";
 import { lifecycleApi } from "./api";
 
-export function useLifecycleEmployees(entityId?: string) {
-  return useQuery({ queryKey: ["lifecycle-employees", entityId], queryFn: () => lifecycleApi.employees(entityId), enabled: Boolean(entityId) });
+export function useLifecycleEmployees(entityId?: string, enabled = true) {
+  return useQuery({ queryKey: ["lifecycle-employees", entityId ?? "all"], queryFn: () => lifecycleApi.employees(entityId), enabled });
 }
 
 export function useUpdateLifecycleEmployee() {

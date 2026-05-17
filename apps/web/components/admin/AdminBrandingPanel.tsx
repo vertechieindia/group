@@ -8,7 +8,7 @@ import { useBranding, useCurrentUser, useUpdateBranding } from "@/features/admin
 import { createBrowserSupabaseClient } from "@/features/timesheets/supabase-browser";
 import { US_STATES } from "@/lib/offer-compliance";
 
-export function AdminBrandingPanel() {
+export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean }) {
   const { data: me } = useCurrentUser();
   const entityId = me?.entity.id;
   const { data } = useBranding(entityId);
@@ -103,11 +103,15 @@ export function AdminBrandingPanel() {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
       <Card className="p-5">
-        <div className="flex items-center gap-2"><Palette className="size-5 text-primary" /><h1 className="text-2xl font-semibold">Company Branding</h1></div>
-        <p className="mt-2 text-sm text-muted-foreground">Company admins can brand the workspace their users see after login.</p>
+        <div className="flex items-center gap-2"><Palette className="size-5 text-primary" /><h1 className="text-2xl font-semibold">{setupMode ? "Company Profile Setup" : "Company Branding"}</h1></div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {setupMode
+            ? "Complete the company identity, compliance, contact, logo, and brand profile before inviting HR, accounts, supervisors, and employees."
+            : "Company admins can brand the workspace their users see after login."}
+        </p>
         <form className="mt-5 grid gap-4" onSubmit={submit}>
           <label className="text-sm font-medium">Brand name<Input required value={form.brandName} onChange={(event) => setForm((current) => ({ ...current, brandName: event.target.value }))} /></label>
-          <label className="text-sm font-medium">Legal company name<Input value={form.legalName} onChange={(event) => setForm((current) => ({ ...current, legalName: event.target.value }))} placeholder="Company legal name for offer letters" /></label>
+          <label className="text-sm font-medium">Legal company name<Input required={setupMode} value={form.legalName} onChange={(event) => setForm((current) => ({ ...current, legalName: event.target.value }))} placeholder="Company legal name for offer letters" /></label>
           <div className="grid gap-2">
             <label className="text-sm font-medium">Logo upload</label>
             <div className="grid gap-3 rounded-lg border border-dashed border-border bg-background/70 p-3">
@@ -123,18 +127,18 @@ export function AdminBrandingPanel() {
             </div>
           </div>
           <label className="text-sm font-medium">Logo URL<Input value={form.brandLogoUrl} onChange={(event) => setForm((current) => ({ ...current, brandLogoUrl: event.target.value }))} placeholder="https://..." /></label>
-          <label className="text-sm font-medium">Company address<textarea className="mt-1 min-h-[96px] w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" value={form.companyAddress} onChange={(event) => setForm((current) => ({ ...current, companyAddress: event.target.value }))} placeholder="Street, city, state, ZIP" /></label>
+          <label className="text-sm font-medium">Company address<textarea required={setupMode} className="mt-1 min-h-[96px] w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" value={form.companyAddress} onChange={(event) => setForm((current) => ({ ...current, companyAddress: event.target.value }))} placeholder="Street, city, state, ZIP" /></label>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-medium">Company EIN<Input value={form.companyEin} onChange={(event) => setForm((current) => ({ ...current, companyEin: event.target.value }))} placeholder="XX-XXXXXXX" /></label>
+            <label className="text-sm font-medium">Company EIN<Input required={setupMode} value={form.companyEin} onChange={(event) => setForm((current) => ({ ...current, companyEin: event.target.value }))} placeholder="XX-XXXXXXX" /></label>
             <label className="text-sm font-medium">E-Verify number<Input value={form.eVerifyNumber} onChange={(event) => setForm((current) => ({ ...current, eVerifyNumber: event.target.value }))} /></label>
             <label className="text-sm font-medium">Home state
               <select className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-primary/30" value={form.companyHomeState} onChange={(event) => setForm((current) => ({ ...current, companyHomeState: event.target.value }))}>
                 {US_STATES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
               </select>
             </label>
-            <label className="text-sm font-medium">Company phone<Input value={form.companyPhone} onChange={(event) => setForm((current) => ({ ...current, companyPhone: event.target.value }))} /></label>
-            <label className="text-sm font-medium">Company website<Input value={form.companyWebsite} onChange={(event) => setForm((current) => ({ ...current, companyWebsite: event.target.value }))} placeholder="https://company.com" /></label>
-            <label className="text-sm font-medium">HR email<Input inputMode="email" value={form.hrEmail} onChange={(event) => setForm((current) => ({ ...current, hrEmail: event.target.value }))} placeholder="hr@company.com" /></label>
+            <label className="text-sm font-medium">Company phone<Input required={setupMode} value={form.companyPhone} onChange={(event) => setForm((current) => ({ ...current, companyPhone: event.target.value }))} /></label>
+            <label className="text-sm font-medium">Company website<Input required={setupMode} value={form.companyWebsite} onChange={(event) => setForm((current) => ({ ...current, companyWebsite: event.target.value }))} placeholder="https://company.com" /></label>
+            <label className="text-sm font-medium">HR email<Input required={setupMode} inputMode="email" value={form.hrEmail} onChange={(event) => setForm((current) => ({ ...current, hrEmail: event.target.value }))} placeholder="hr@company.com" /></label>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-medium">Primary color<Input type="color" value={form.primaryColor} onChange={(event) => setForm((current) => ({ ...current, primaryColor: event.target.value }))} /></label>
@@ -144,7 +148,7 @@ export function AdminBrandingPanel() {
             Workspace URL is assigned automatically from the company name: /{slugify(form.brandName)}/timesheets
           </div>
           {updateBranding.error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{updateBranding.error.message}</div>}
-          <Button disabled={updateBranding.isPending} type="submit"><Save className="size-4" />Save branding</Button>
+          <Button disabled={updateBranding.isPending} type="submit"><Save className="size-4" />{setupMode ? "Complete company setup" : "Save branding"}</Button>
         </form>
       </Card>
       <Card className="h-fit p-5">

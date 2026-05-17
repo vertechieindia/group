@@ -16,8 +16,8 @@ export function useAdminDashboard() {
   return useQuery({ queryKey: ["admin-dashboard"], queryFn: adminApi.dashboard });
 }
 
-export function useAdminUsers(entityId?: string) {
-  return useQuery({ queryKey: ["admin-users", entityId], queryFn: () => adminApi.users(entityId), enabled: Boolean(entityId) });
+export function useAdminUsers(entityId?: string, enabled = true) {
+  return useQuery({ queryKey: ["admin-users", entityId ?? "all"], queryFn: () => adminApi.users(entityId), enabled });
 }
 
 export function useCompanyRoles(entityId?: string) {
@@ -32,7 +32,49 @@ export function useCreateAdminUser() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateAdminUserInput) => adminApi.createUser(input),
-    onSuccess: (_, input) => queryClient.invalidateQueries({ queryKey: ["admin-users", input.entityId] })
+    onSuccess: (user, input) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users", input.entityId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-users", user.entityId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-users", "all"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-entities"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
+    }
+  });
+}
+
+export function useHoldCompanyServices() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => adminApi.holdCompanyServices(userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-entities"] });
+    }
+  });
+}
+
+export function useResumeCompanyServices() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => adminApi.resumeCompanyServices(userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-entities"] });
+    }
+  });
+}
+
+export function useDeleteCompanyAdmin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => adminApi.deleteCompanyAdmin(userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-entities"] });
+    }
   });
 }
 

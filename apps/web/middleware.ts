@@ -31,8 +31,16 @@ export async function middleware(request: NextRequest) {
   const { data } = await supabase.auth.getUser(token);
   if (!data.user) return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(request.nextUrl.pathname)}`, request.url));
 
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).single();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, is_active, business_entities!profiles_entity_id_fkey(is_active)")
+    .eq("id", data.user.id)
+    .single();
   if (!profile) return NextResponse.redirect(new URL("/login", request.url));
+  const entity = Array.isArray(profile.business_entities) ? profile.business_entities[0] : profile.business_entities;
+  if (!profile.is_active || (profile.role !== "super_admin" && entity?.is_active === false)) {
+    return NextResponse.redirect(new URL("/login?error=account_inactive", request.url));
+  }
 
   if (!canAccessPath(profile.role, request.nextUrl.pathname)) {
     return NextResponse.redirect(new URL("/timesheets", request.url));

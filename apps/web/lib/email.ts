@@ -9,8 +9,8 @@ export async function sendTransactionalEmail(input: {
   html: string;
   attachments?: EmailAttachment[];
 }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error("RESEND_API_KEY is required to send offer letters.");
+  const apiKey = process.env.RESEND_API_KEY || process.env.RESEND_API;
+  if (!apiKey) throw new Error("RESEND_API_KEY is required to send transactional emails.");
 
   const from = process.env.RESEND_FROM_EMAIL || "VerTechie Workforce OS <onboarding@vertechie.com>";
   const response = await fetch("https://api.resend.com/emails", {

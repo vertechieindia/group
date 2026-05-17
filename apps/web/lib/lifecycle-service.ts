@@ -32,16 +32,20 @@ export class LifecycleService {
   constructor(private readonly ctx: RequestContext) {}
 
   async listEmployees(entityId?: string): Promise<LifecycleEmployee[]> {
+    const listAllCompanies = this.ctx.profile.role === "super_admin" && !entityId;
     const scopedEntityId = entityId ?? this.ctx.profile.entityId;
-    await assertEntityScope(this.ctx, scopedEntityId);
-    await requirePermission(this.ctx, "employee_lifecycle:manage:entity", scopedEntityId);
+    if (!listAllCompanies) {
+      await assertEntityScope(this.ctx, scopedEntityId);
+      await requirePermission(this.ctx, "employee_lifecycle:manage:entity", scopedEntityId);
+    }
 
-    const { data, error } = await this.admin
+    let query = this.admin
       .from("employees")
-      .select("id, profile_id, entity_id, employee_number, unique_employee_code, title, department, employee_type, onboarding_status, supervisor_id, client_name, project_name, updated_resume_provided, resume_status, offer_letter_status, interview_prep_status, interview_prep_count, interview_feedback, linkedin_review_status, marketing_status, marketing_technology, candidate_status, recruiter_assigned_id, profiles!employees_profile_id_fkey(full_name, email)")
-      .eq("entity_id", scopedEntityId)
+      .select("id, profile_id, entity_id, employee_number, unique_employee_code, title, department, employee_type, onboarding_status, supervisor_id, client_name, project_name, updated_resume_provided, resume_status, offer_letter_status, interview_prep_status, interview_prep_count, interview_feedback, linkedin_review_status, marketing_status, marketing_technology, candidate_status, recruiter_assigned_id, profiles!employees_profile_id_fkey(full_name, email), business_entities!employees_entity_id_fkey(name, slug)")
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
+    if (!listAllCompanies) query = query.eq("entity_id", scopedEntityId);
+    const { data, error } = await query;
     if (error) throw error;
 
     const supervisors = new Map((data ?? []).map((employee: any) => [employee.id, employee.profiles?.full_name ?? null]));
@@ -54,6 +58,8 @@ export class LifecycleService {
       id: row.id,
       profileId: row.profile_id,
       entityId: row.entity_id,
+      entityName: row.business_entities?.name ?? null,
+      entitySlug: row.business_entities?.slug ?? null,
       fullName: row.profiles?.full_name ?? "Employee",
       email: row.profiles?.email ?? "",
       employeeNumber: row.employee_number,

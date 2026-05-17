@@ -7,6 +7,8 @@ export type RequestProfile = {
   email: string;
   fullName: string;
   role: AppRole;
+  isActive: boolean;
+  entityIsActive: boolean;
 };
 
 export type RequestContext = {
@@ -27,12 +29,16 @@ export async function createRequestContext(request: Request, requestId: string):
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, entity_id, email, full_name, role")
+    .select("id, entity_id, email, full_name, role, is_active, business_entities!profiles_entity_id_fkey(is_active)")
     .eq("id", userResult.user.id)
     .single();
 
   if (error || !profile) {
     throw new Error("PROFILE_NOT_FOUND");
+  }
+  const entity = Array.isArray(profile.business_entities) ? profile.business_entities[0] : profile.business_entities;
+  if (!profile.is_active || (profile.role !== "super_admin" && entity?.is_active === false)) {
+    throw new Error("ACCOUNT_INACTIVE");
   }
 
   return {
@@ -43,7 +49,9 @@ export async function createRequestContext(request: Request, requestId: string):
       entityId: profile.entity_id,
       email: profile.email,
       fullName: profile.full_name,
-      role: profile.role
+      role: profile.role,
+      isActive: profile.is_active,
+      entityIsActive: entity?.is_active !== false
     }
   };
 }

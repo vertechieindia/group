@@ -25,6 +25,7 @@ export async function apiHandler<T>(
     if (error instanceof ZodError) return fail("VALIDATION_ERROR", "The request payload is invalid.", requestId, 422, error.flatten());
     const message = error instanceof Error ? error.message : typeof error === "object" && error && "message" in error ? String(error.message) : "INTERNAL_ERROR";
     if (message === "UNAUTHENTICATED") return fail("UNAUTHENTICATED", "Authentication is required.", requestId, 401);
+    if (message === "ACCOUNT_INACTIVE") return fail("ACCOUNT_INACTIVE", "This account or company workspace is currently inactive.", requestId, 403);
     if (message === "FORBIDDEN" || message === "ENTITY_SCOPE_VIOLATION") return fail("FORBIDDEN", "You do not have access to this resource.", requestId, 403);
     if (message === "TIMESHEET_LOCKED" || message === "INVALID_STATUS_TRANSITION") return fail(message, "The timesheet cannot be changed in its current status.", requestId, 409);
     if (message === "REJECTION_REASON_REQUIRED") return fail(message, "A rejection or delete/refill reason is required.", requestId, 422);

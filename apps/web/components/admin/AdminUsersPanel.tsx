@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, Plus, UserRoundPlus } from "lucide-react";
+import { KeyRound, PauseCircle, PlayCircle, Plus, Trash2, UserRoundPlus } from "lucide-react";
 import { Button, Card, Input, SecondaryButton, Select } from "@vertechie/ui";
 import { roles, type AppRole } from "@vertechie/types";
-import { useAdminUsers, useCompanyRoles, useCreateAdminUser, useCurrentUser, useEntities, useUpdateUserPassword } from "@/features/admin/hooks";
+import { useAdminUsers, useCompanyRoles, useCreateAdminUser, useCurrentUser, useDeleteCompanyAdmin, useHoldCompanyServices, useResumeCompanyServices, useUpdateUserPassword } from "@/features/admin/hooks";
 
 const roleLabels: Record<AppRole, string> = {
   super_admin: "Super Admin",
@@ -41,26 +41,29 @@ const builtInCompanyRoleSlugs = new Set([
 
 export function AdminUsersPanel() {
   const { data: me } = useCurrentUser();
-  const { data: entities } = useEntities();
-  const [entityId, setEntityId] = useState("");
-  const effectiveEntityId = entityId || me?.entity.id;
-  const { data: users, isLoading } = useAdminUsers(effectiveEntityId);
+  const isSuperAdmin = me?.role === "super_admin";
+  const effectiveEntityId = me?.entity.id;
+  const { data: users, isLoading } = useAdminUsers(isSuperAdmin ? undefined : effectiveEntityId, Boolean(me));
   const { data: companyRoles } = useCompanyRoles(effectiveEntityId);
   const createUser = useCreateAdminUser();
   const updatePassword = useUpdateUserPassword(effectiveEntityId);
+  const holdServices = useHoldCompanyServices();
+  const resumeServices = useResumeCompanyServices();
+  const deleteCompanyAdmin = useDeleteCompanyAdmin();
 
   const availableRoles = useMemo(() => {
-    if (me?.role === "super_admin") return roles.filter((role) => role === "company_admin");
+    if (isSuperAdmin) return roles.filter((role) => role === "company_admin");
     if (me?.role === "company_admin") return roles.filter((role) => ["hr", "accounts_manager", "team_lead", "employee", "recruiter"].includes(role));
     if (me?.role === "admin") return roles.filter((role) => role !== "super_admin");
     return [];
-  }, [me?.role]);
+  }, [isSuperAdmin, me?.role]);
   const customCompanyRoles = useMemo(
     () => (companyRoles ?? []).filter((role) => !role.isSystem && !builtInCompanyRoleSlugs.has(role.slug)),
     [companyRoles]
   );
 
   const [form, setForm] = useState({
+    companyName: "",
     fullName: "",
     email: "",
     password: "",
@@ -71,6 +74,7 @@ export function AdminUsersPanel() {
   });
   const [selectedCompanyRoles, setSelectedCompanyRoles] = useState<string[]>([]);
   const [passwordEdits, setPasswordEdits] = useState<Record<string, string>>({});
+  const [createdInvite, setCreatedInvite] = useState<{ email?: string; temporaryPassword?: string; setupInviteUrl?: string | null; emailDeliveryStatus?: string | null } | null>(null);
 
   useEffect(() => {
     if (availableRoles.length && !availableRoles.includes(form.role)) {
@@ -81,78 +85,110 @@ export function AdminUsersPanel() {
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!effectiveEntityId) return;
-    await createUser.mutateAsync({
+    const created = await createUser.mutateAsync({
       entityId: effectiveEntityId,
       ...form,
+      companyName: isSuperAdmin && form.role === "company_admin" ? form.companyName : undefined,
       title: form.title || null,
       department: form.department || null,
       employeeNumber: form.employeeNumber || undefined,
       companyRoleIds: selectedCompanyRoles
     });
-    setForm({ fullName: "", email: "", password: "", role: "employee", employeeNumber: "", title: "", department: "" });
+    setCreatedInvite({ email: form.email, temporaryPassword: form.password, setupInviteUrl: created.setupInviteUrl, emailDeliveryStatus: created.emailDeliveryStatus });
+    setForm({ companyName: "", fullName: "", email: "", password: "", role: "employee", employeeNumber: "", title: "", department: "" });
     setSelectedCompanyRoles([]);
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
+    <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_420px]">
       <div className="grid gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">User Accounts</h1>
-            <p className="text-sm text-muted-foreground">Create real Supabase login credentials and assign entity-scoped access.</p>
+            <p className="text-sm text-muted-foreground">{isSuperAdmin ? "Manage company admins, service access, and credentials." : "Create real Supabase login credentials and assign entity-scoped access."}</p>
           </div>
-          {me?.role === "super_admin" && (
-            <Select className="max-w-xs" value={effectiveEntityId ?? ""} onChange={(event) => setEntityId(event.target.value)}>
-              {(entities ?? []).map((entity) => <option key={entity.id} value={entity.id}>{entity.name}</option>)}
-            </Select>
-          )}
         </div>
-        <div className="overflow-hidden rounded-lg border border-border bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-muted text-xs uppercase text-muted-foreground">
-              <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Primary Role</th><th className="px-4 py-3">Password</th></tr>
-            </thead>
-            <tbody>
-              {(users ?? []).map((user) => (
-                <tr className="border-t border-border" key={user.id}>
-                  <td className="px-4 py-3 font-medium">{user.fullName}<div className="text-xs text-muted-foreground">{user.title ?? user.department}</div></td>
-                  <td className="px-4 py-3">{user.email}</td>
-                  <td className="px-4 py-3">{roleLabels[user.role]}<div className="text-xs text-muted-foreground">{user.companyRoles.filter((role) => !role.isSystem && !builtInCompanyRoleSlugs.has(role.slug)).map((role) => role.name).join(", ")}</div></td>
-                  <td className="px-4 py-3">
-                    {(me?.role === "super_admin" ? user.role === "company_admin" : !["super_admin", "admin", "company_admin"].includes(user.role)) ? (
-                      <div className="flex gap-2">
-                        <Input
-                          className="h-9"
-                          minLength={8}
-                          placeholder="New password"
-                          type="password"
-                          value={passwordEdits[user.id] ?? ""}
-                          onChange={(event) => setPasswordEdits((current) => ({ ...current, [user.id]: event.target.value }))}
-                        />
-                        <SecondaryButton
-                          className="h-9 shrink-0"
-                          disabled={(passwordEdits[user.id]?.length ?? 0) < 8 || updatePassword.isPending}
-                          type="button"
-                          onClick={async () => {
-                            await updatePassword.mutateAsync({ userId: user.id, input: { password: passwordEdits[user.id] ?? "" } });
-                            setPasswordEdits((current) => ({ ...current, [user.id]: "" }));
-                          }}
-                        >
-                          <KeyRound className="size-4" />Update
-                        </SecondaryButton>
-                      </div>
-                    ) : <span className="text-xs text-muted-foreground">Restricted</span>}
-                  </td>
-                </tr>
-              ))}
-              {!isLoading && !users?.length && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={4}>No users found for this company.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        {isSuperAdmin ? (
+          <div className="grid gap-3">
+            {(users ?? []).map((user) => (
+              <Card className="p-4" key={user.id}>
+                <div className="grid gap-4 xl:grid-cols-[minmax(160px,1fr)_minmax(180px,1fr)_minmax(230px,1.2fr)]">
+                  <div>
+                    <div className="text-xs font-semibold uppercase text-muted-foreground">Active company</div>
+                    <div className="mt-1 font-semibold">{user.entityName ?? "Company"}</div>
+                    <div className={user.entityIsActive === false ? "mt-1 text-xs font-medium text-destructive" : "mt-1 text-xs text-muted-foreground"}>
+                      {user.entityIsActive === false ? "Services on hold" : "Active"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase text-muted-foreground">Company admin</div>
+                    <div className="mt-1 font-semibold">{user.fullName}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Company Admin</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase text-muted-foreground">Email</div>
+                    <div className="mt-1 break-all font-medium">{user.email}</div>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-4">
+                  {passwordControl(user)}
+                  {user.entityIsActive === false ? (
+                    <SecondaryButton className="h-9 whitespace-nowrap" disabled={resumeServices.isPending} type="button" onClick={() => resumeServices.mutate(user.id)}>
+                      <PlayCircle className="size-4" />Resume services
+                    </SecondaryButton>
+                  ) : (
+                    <SecondaryButton className="h-9 whitespace-nowrap" disabled={holdServices.isPending} type="button" onClick={() => holdServices.mutate(user.id)}>
+                      <PauseCircle className="size-4" />Hold services
+                    </SecondaryButton>
+                  )}
+                  <SecondaryButton
+                    className="h-9 whitespace-nowrap border-destructive/30 text-destructive hover:bg-destructive/10"
+                    disabled={deleteCompanyAdmin.isPending}
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(`Permanently delete ${user.fullName}? This removes their login credentials.`)) deleteCompanyAdmin.mutate(user.id);
+                    }}
+                  >
+                    <Trash2 className="size-4" />Delete User Permanently
+                  </SecondaryButton>
+                </div>
+              </Card>
+            ))}
+            {!isLoading && !users?.length && <Card className="p-8 text-center text-sm text-muted-foreground">No company admins have been created yet.</Card>}
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-border bg-white">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
+                <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Primary Role</th><th className="px-4 py-3">Password</th></tr>
+              </thead>
+              <tbody>
+                {(users ?? []).map((user) => (
+                  <tr className="border-t border-border" key={user.id}>
+                    <td className="px-4 py-3 font-medium">{user.fullName}<div className="text-xs text-muted-foreground">{user.title ?? user.department}</div></td>
+                    <td className="px-4 py-3">{user.email}</td>
+                    <td className="px-4 py-3">{roleLabels[user.role]}<div className="text-xs text-muted-foreground">{user.companyRoles.filter((role) => !role.isSystem && !builtInCompanyRoleSlugs.has(role.slug)).map((role) => role.name).join(", ")}</div></td>
+                    <td className="px-4 py-3">{passwordControl(user)}</td>
+                  </tr>
+                ))}
+                {!isLoading && !users?.length && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={4}>No users found for this company.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
       <Card className="h-fit p-5">
         <div className="flex items-center gap-2"><UserRoundPlus className="size-5 text-primary" /><h2 className="font-semibold">Create user credentials</h2></div>
         <form className="mt-4 grid gap-3" onSubmit={submit}>
+          {isSuperAdmin && form.role === "company_admin" && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <label className="grid gap-1 text-sm font-medium">
+                Company name
+                <Input required placeholder="Company legal or operating name" value={form.companyName} onChange={(event) => setForm((current) => ({ ...current, companyName: event.target.value }))} />
+              </label>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">A new tenant workspace, URL slug, system roles, and company admin invite will be created from this name.</p>
+            </div>
+          )}
           <Input required placeholder="Full name" value={form.fullName} onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))} />
           <Input required inputMode="email" placeholder="Email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
           <Input required minLength={8} placeholder="Initial password" type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
@@ -162,9 +198,13 @@ export function AdminUsersPanel() {
               {availableRoles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}
             </Select>
           </label>
-          <Input placeholder="Employee number" value={form.employeeNumber} onChange={(event) => setForm((current) => ({ ...current, employeeNumber: event.target.value }))} />
-          <Input placeholder="Title" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
-          <Input placeholder="Department" value={form.department} onChange={(event) => setForm((current) => ({ ...current, department: event.target.value }))} />
+          {!isSuperAdmin && (
+            <>
+              <Input placeholder="Employee number" value={form.employeeNumber} onChange={(event) => setForm((current) => ({ ...current, employeeNumber: event.target.value }))} />
+              <Input placeholder="Title" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
+              <Input placeholder="Department" value={form.department} onChange={(event) => setForm((current) => ({ ...current, department: event.target.value }))} />
+            </>
+          )}
           {customCompanyRoles.length > 0 && (
             <div className="rounded-md border border-border p-3">
               <div className="text-sm font-medium">Additional permission groups</div>
@@ -183,9 +223,48 @@ export function AdminUsersPanel() {
             </div>
           )}
           {createUser.error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{createUser.error.message}</div>}
+          {createdInvite?.setupInviteUrl && (
+            <div className="rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-sm">
+              <div className="font-medium text-primary">Company admin setup invite created</div>
+              <div className="mt-1 text-muted-foreground">Login: {createdInvite.email}</div>
+              {createdInvite.emailDeliveryStatus !== "sent" && <div className="mt-1 text-muted-foreground">Temporary password: {createdInvite.temporaryPassword}</div>}
+              <div className="mt-1 break-all text-muted-foreground">{createdInvite.setupInviteUrl}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Email delivery: {createdInvite.emailDeliveryStatus === "sent" ? "sent" : createdInvite.emailDeliveryStatus === "not_configured" ? "not sent because RESEND_API_KEY is not configured" : "not confirmed"}
+              </div>
+            </div>
+          )}
           <Button disabled={createUser.isPending} type="submit"><Plus className="size-4" />Create user</Button>
         </form>
       </Card>
     </div>
   );
+
+  function passwordControl(user: NonNullable<typeof users>[number]) {
+    const canUpdate = isSuperAdmin ? user.role === "company_admin" : !["super_admin", "admin", "company_admin"].includes(user.role);
+    if (!canUpdate) return <span className="text-xs text-muted-foreground">Restricted</span>;
+    return (
+      <div className="flex min-w-[260px] gap-2">
+        <Input
+          className="h-9"
+          minLength={8}
+          placeholder="New password"
+          type="password"
+          value={passwordEdits[user.id] ?? ""}
+          onChange={(event) => setPasswordEdits((current) => ({ ...current, [user.id]: event.target.value }))}
+        />
+        <SecondaryButton
+          className="h-9 shrink-0"
+          disabled={(passwordEdits[user.id]?.length ?? 0) < 8 || updatePassword.isPending}
+          type="button"
+          onClick={async () => {
+            await updatePassword.mutateAsync({ userId: user.id, input: { password: passwordEdits[user.id] ?? "" } });
+            setPasswordEdits((current) => ({ ...current, [user.id]: "" }));
+          }}
+        >
+          <KeyRound className="size-4" />Update
+        </SecondaryButton>
+      </div>
+    );
+  }
 }

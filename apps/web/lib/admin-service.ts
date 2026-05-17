@@ -3,6 +3,7 @@ import type { AdminCompanyDashboard, AdminUser, AppRole, BusinessEntity, Company
 import { assertEntityScope, requirePermission, type RequestContext } from "./request-context";
 import { writeAudit } from "./audit";
 import { fallbackLogoForEntity } from "./brand-assets";
+import { sendTransactionalEmail } from "./email";
 
 const internalRoles = new Set(["super_admin", "admin", "company_admin", "hr", "accounts_manager", "recruiter", "marketing", "team_lead", "operations", "viewer", "employee"]);
 const companyAdminCreatableRoles = new Set<AppRole>(["hr", "accounts_manager", "team_lead", "employee", "recruiter"]);
@@ -50,19 +51,22 @@ export class AdminService {
       .is("deleted_at", null)
       .order("name");
     if (error) throw error;
-    return (data ?? []).map(mapEntity);
+    const entities = (data ?? []).map(mapEntity);
+    return this.onlyOperationalEntities(entities);
   }
 
   async listUsers(entityId?: string) {
+    const groupCompanyAdminView = this.ctx.profile.role === "super_admin" && !entityId;
     const scopedEntityId = entityId ?? this.ctx.profile.entityId;
-    await this.assertCanManageUsers(scopedEntityId);
+    if (!groupCompanyAdminView) await this.assertCanManageUsers(scopedEntityId);
 
-    const { data: profiles, error } = await this.admin
+    let query = this.admin
       .from("profiles")
-      .select("id, entity_id, email, full_name, role, department, is_active")
-      .eq("entity_id", scopedEntityId)
+      .select("id, entity_id, email, full_name, role, department, is_active, business_entities!profiles_entity_id_fkey(name, slug, is_active)")
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
+    query = groupCompanyAdminView ? query.eq("role", "company_admin") : query.eq("entity_id", scopedEntityId);
+    const { data: profiles, error } = await query;
     if (error) throw error;
 
     const profileIds = (profiles ?? []).map((profile) => profile.id);
@@ -80,6 +84,9 @@ export class AdminService {
       return {
         id: profile.id,
         entityId: profile.entity_id,
+        entityName: relation(profile.business_entities)?.name ?? null,
+        entitySlug: relation(profile.business_entities)?.slug ?? null,
+        entityIsActive: relation(profile.business_entities)?.is_active ?? true,
         email: profile.email,
         fullName: profile.full_name,
         role: profile.role,
@@ -102,7 +109,7 @@ export class AdminService {
     const [{ data: entities, error: entityError }, { data: profiles, error: profileError }] = await Promise.all([
       this.admin
         .from("business_entities")
-        .select("id, name, slug, brand_name, brand_logo_url")
+        .select("id, name, slug, brand_name, brand_logo_url, is_active")
         .is("deleted_at", null)
         .order("name"),
       this.admin
@@ -129,16 +136,18 @@ export class AdminService {
         activeUserCount: entityProfiles.length,
         roleCounts
       };
-    });
+    }).filter((company) => company.activeUserCount > 0 && (entities ?? []).find((entity: any) => entity.id === company.id)?.is_active !== false);
 
     return {
       totalActiveCompanies: companies.length,
-      totalActiveUsers: profiles?.length ?? 0,
+      totalActiveUsers: companies.reduce((sum, company) => sum + company.activeUserCount, 0),
       companies
     };
   }
 
   async createUser(input: CreateAdminUserInput) {
+    const entity = await this.resolveUserCreationEntity(input);
+    input = { ...input, entityId: entity.id };
     await this.assertCanManageUsers(input.entityId);
     if (!internalRoles.has(input.role)) throw new Error("INVALID_ROLE");
     this.assertCanCreateRole(input.role);
@@ -203,8 +212,25 @@ export class AdminService {
     }
 
     await this.replaceCompanyRoleAssignments(input.entityId, user.id, input.companyRoleIds);
-    await writeAudit(this.ctx, { action: "admin.user_created", resourceType: "profile", resourceId: user.id, entityId: input.entityId, metadata: { role: input.role } });
-    return (await this.listUsers(input.entityId)).find((profile) => profile.id === user.id);
+    const inviteResult = input.role === "company_admin"
+      ? await this.sendCompanyAdminSetupInvite({
+        email: input.email,
+        fullName: input.fullName,
+        password: input.password,
+        entity,
+        portalSlug: entity.portalSlug || entity.slug
+      })
+      : { setupInviteUrl: null, emailDeliveryStatus: null as AdminUser["emailDeliveryStatus"] };
+
+    await writeAudit(this.ctx, {
+      action: "admin.user_created",
+      resourceType: "profile",
+      resourceId: user.id,
+      entityId: input.entityId,
+      metadata: { role: input.role, companyName: input.companyName, setupInviteUrl: inviteResult.setupInviteUrl, emailDeliveryStatus: inviteResult.emailDeliveryStatus }
+    });
+    const createdUser = (await this.listUsers(input.entityId)).find((profile) => profile.id === user.id);
+    return createdUser ? { ...createdUser, ...inviteResult } : createdUser;
   }
 
   async updateUserPassword(userId: string, input: UpdateUserPasswordInput) {
@@ -224,6 +250,43 @@ export class AdminService {
     if (updateError) throw updateError;
     await writeAudit(this.ctx, { action: "admin.user_password_updated", resourceType: "profile", resourceId: userId, entityId: profile.entity_id, metadata: { role: profile.role } });
     return { updated: true };
+  }
+
+  async holdCompanyServices(userId: string) {
+    const profile = await this.getCompanyAdminManagedBySuperAdmin(userId);
+    const { error } = await this.admin
+      .from("business_entities")
+      .update({ is_active: false, updated_by: this.ctx.profile.id })
+      .eq("id", profile.entity_id);
+    if (error) throw error;
+    await writeAudit(this.ctx, { action: "admin.company_services_held", resourceType: "business_entity", resourceId: profile.entity_id, entityId: profile.entity_id, metadata: { companyAdminUserId: userId } });
+    return { updated: true };
+  }
+
+  async resumeCompanyServices(userId: string) {
+    const profile = await this.getCompanyAdminManagedBySuperAdmin(userId);
+    const { error } = await this.admin
+      .from("business_entities")
+      .update({ is_active: true, updated_by: this.ctx.profile.id })
+      .eq("id", profile.entity_id);
+    if (error) throw error;
+    await writeAudit(this.ctx, { action: "admin.company_services_resumed", resourceType: "business_entity", resourceId: profile.entity_id, entityId: profile.entity_id, metadata: { companyAdminUserId: userId } });
+    return { updated: true };
+  }
+
+  async deleteCompanyAdminPermanently(userId: string) {
+    const profile = await this.getCompanyAdminManagedBySuperAdmin(userId);
+    await writeAudit(this.ctx, { action: "admin.company_admin_permanent_delete_requested", resourceType: "profile", resourceId: userId, entityId: profile.entity_id, metadata: { email: profile.email } });
+
+    await this.admin.from("profile_role_assignments").delete().eq("profile_id", userId);
+    await this.admin.from("employees").delete().eq("profile_id", userId);
+    const { error: profileError } = await this.admin.from("profiles").delete().eq("id", userId);
+    if (profileError) throw profileError;
+    const { error: authError } = await this.admin.auth.admin.deleteUser(userId);
+    if (authError) throw authError;
+
+    await writeAudit(this.ctx, { action: "admin.company_admin_permanently_deleted", resourceType: "profile", resourceId: userId, entityId: profile.entity_id, metadata: { email: profile.email } });
+    return { deleted: true };
   }
 
   async listCompanyRoles(entityId?: string) {
@@ -349,6 +412,163 @@ export class AdminService {
     );
     if (error) throw error;
   }
+
+  private async getCompanyAdminManagedBySuperAdmin(userId: string) {
+    if (this.ctx.profile.role !== "super_admin") throw new Error("FORBIDDEN");
+    const { data: profile, error } = await this.admin
+      .from("profiles")
+      .select("id, entity_id, email, role")
+      .eq("id", userId)
+      .is("deleted_at", null)
+      .single();
+    if (error || !profile) throw new Error("PROFILE_NOT_FOUND");
+    if (profile.role !== "company_admin") throw new Error("FORBIDDEN");
+    return profile;
+  }
+
+  private async onlyOperationalEntities(entities: BusinessEntity[]) {
+    const entityIds = entities.map((entity) => entity.id);
+    if (!entityIds.length) return [];
+    const { data, error } = await this.admin
+      .from("profiles")
+      .select("entity_id")
+      .in("entity_id", entityIds)
+      .eq("is_active", true)
+      .is("deleted_at", null);
+    if (error) throw error;
+    const activeEntityIds = new Set((data ?? []).map((profile) => profile.entity_id));
+    return entities.filter((entity) => activeEntityIds.has(entity.id));
+  }
+
+  private async resolveUserCreationEntity(input: CreateAdminUserInput): Promise<BusinessEntity> {
+    if (this.ctx.profile.role !== "super_admin" || input.role !== "company_admin") {
+      const { data, error } = await this.admin
+        .from("business_entities")
+        .select(entitySelect)
+        .eq("id", input.entityId)
+        .is("deleted_at", null)
+        .single();
+      if (error) throw error;
+      return mapEntity(data);
+    }
+
+    if (!input.companyName?.trim()) throw new Error("COMPANY_NAME_REQUIRED");
+    const slug = await this.uniqueEntitySlug(input.companyName);
+    const { data, error } = await this.admin
+      .from("business_entities")
+      .insert({
+        name: input.companyName,
+        legal_name: input.companyName,
+        slug,
+        brand_name: input.companyName,
+        portal_slug: slug,
+        primary_color: "#0f766e",
+        accent_color: "#f59e0b",
+        created_by: this.ctx.profile.id,
+        updated_by: this.ctx.profile.id
+      })
+      .select(entitySelect)
+      .single();
+    if (error) throw error;
+    await this.seedSystemCompanyRoles(data.id);
+    await writeAudit(this.ctx, { action: "admin.company_created", resourceType: "business_entity", resourceId: data.id, entityId: data.id, metadata: { companyName: input.companyName, slug } });
+    return mapEntity(data);
+  }
+
+  private async uniqueEntitySlug(companyName: string) {
+    const base = slugify(companyName) || "company";
+    let candidate = base;
+    let suffix = 2;
+    while (true) {
+      const { data, error } = await this.admin
+        .from("business_entities")
+        .select("id")
+        .or(`slug.eq.${candidate},portal_slug.eq.${candidate}`)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return candidate;
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+  }
+
+  private async seedSystemCompanyRoles(entityId: string) {
+    const defaults = [
+      {
+        name: "Company Admin",
+        slug: "company-admin",
+        description: "Full company administration",
+        permissions: ["user:manage:entity", "company_role:manage:entity", "branding:manage:entity", "company_dashboard:view:entity", "timesheet:view:entity", "timesheet:approve:entity", "timesheet:reject:entity", "timesheet:request_correction:entity", "timesheet:export:entity", "timesheet:payment:entity", "timesheet:delete_refill:entity", "report:export", "payroll:view", "employee_lifecycle:manage:entity", "onboarding_invite:create:entity", "onboarding_template:manage:entity", "offer_template:manage:entity", "offer:send:entity", "learning:manage:entity", "discord_group:manage:entity", "invoice:manage:entity", "project_assignment:manage:entity"]
+      },
+      {
+        name: "HR Manager",
+        slug: "hr-manager",
+        description: "HR and onboarding operations",
+        permissions: ["employee_lifecycle:manage:entity", "onboarding_invite:create:entity", "onboarding_template:manage:entity", "onboarding:manage:entity", "offer_template:manage:entity", "offer:send:entity", "offer:manage:entity", "document:manage:entity", "learning:manage:entity", "discord_group:manage:entity", "candidate:manage:entity"]
+      },
+      {
+        name: "Accounts Manager",
+        slug: "accounts-manager",
+        description: "Timesheet review, payroll exports, invoices, and project assignments",
+        permissions: ["timesheet:view:entity", "timesheet:approve:entity", "timesheet:reject:entity", "timesheet:request_correction:entity", "timesheet:export:entity", "timesheet:payment:entity", "timesheet:delete_refill:entity", "timesheet_attachment:view:entity", "report:export", "payroll:view", "invoice:manage:entity", "project_assignment:manage:entity"]
+      },
+      {
+        name: "Supervisor",
+        slug: "supervisor",
+        description: "Review assigned employee timesheets and publish learning material",
+        permissions: ["timesheet:view:entity", "timesheet:approve:entity", "timesheet:reject:entity", "timesheet:request_correction:entity", "learning:manage:entity"]
+      },
+      {
+        name: "Employee",
+        slug: "employee",
+        description: "Employee self-service access",
+        permissions: ["learning:manage:entity", "timesheet:create:self", "timesheet:edit:self", "timesheet:submit:self", "timesheet:view:self", "timesheet_attachment:upload:self"]
+      }
+    ];
+
+    const { error } = await this.admin.from("company_roles").upsert(
+      defaults.map((role) => ({
+        entity_id: entityId,
+        ...role,
+        is_system: true,
+        created_by: this.ctx.profile.id,
+        updated_by: this.ctx.profile.id
+      })),
+      { onConflict: "entity_id,slug" }
+    );
+    if (error) throw error;
+  }
+
+  private async sendCompanyAdminSetupInvite(input: { email: string; fullName: string; password: string; entity: BusinessEntity; portalSlug: string }) {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
+    const setupInviteUrl = `${appUrl}/${input.portalSlug}/admin/company-setup`;
+    if (!process.env.RESEND_API_KEY && !process.env.RESEND_API) {
+      return { setupInviteUrl, emailDeliveryStatus: "not_configured" as const };
+    }
+
+    try {
+      await sendTransactionalEmail({
+        to: input.email,
+        subject: `Set up ${input.entity.name} in VerTechie Group Workforce OS`,
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.55;color:#0f172a">
+            <h2>Welcome to VerTechie Group Workforce OS</h2>
+            <p>Hello ${escapeHtml(input.fullName)},</p>
+            <p>Your company admin account for <strong>${escapeHtml(input.entity.name)}</strong> has been created.</p>
+            <p><strong>Login email:</strong> ${escapeHtml(input.email)}<br />
+            <strong>Temporary password:</strong> ${escapeHtml(input.password)}</p>
+            <p>Open the secure setup link below, sign in, and complete your company profile, branding, compliance identity, contacts, logo, home state, EIN, E-Verify number, and HR details.</p>
+            <p><a href="${setupInviteUrl}" style="display:inline-block;background:#0f766e;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none">Set up company profile</a></p>
+            <p>Company workspace URL: <a href="${setupInviteUrl}">${setupInviteUrl}</a></p>
+          </div>
+        `
+      });
+      return { setupInviteUrl, emailDeliveryStatus: "sent" as const };
+    } catch {
+      return { setupInviteUrl, emailDeliveryStatus: "failed" as const };
+    }
+  }
 }
 
 function mapEntity(row: any): BusinessEntity {
@@ -387,4 +607,17 @@ function mapCompanyRole(row: any): CompanyRole {
 
 function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function relation<T>(value: T | T[] | null | undefined): T | undefined {
+  return Array.isArray(value) ? value[0] : value ?? undefined;
 }
