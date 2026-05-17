@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type ChangeEvent, useMemo, useState } from "react";
 import { BriefcaseBusiness, Plus } from "lucide-react";
 import { Badge, Button, Card, Input, Select } from "@vertechie/ui";
 import { useCurrentUser } from "@/features/admin/hooks";
@@ -33,6 +33,42 @@ export function ProjectAssignmentsPanel() {
       .filter(Boolean)
       .some((value) => value.toLowerCase().includes(search)));
   }, [employeeSearch, employees]);
+
+  function updateEmployeeSearch(event: ChangeEvent<HTMLInputElement>) {
+    setEmployeeSearch(event.target.value);
+  }
+
+  function updateClientName(event: ChangeEvent<HTMLInputElement>) {
+    setForm((current) => ({ ...current, clientName: event.target.value }));
+  }
+
+  function updateProjectName(event: ChangeEvent<HTMLInputElement>) {
+    setForm((current) => ({ ...current, projectName: event.target.value }));
+  }
+
+  function updateRoleName(event: ChangeEvent<HTMLInputElement>) {
+    setForm((current) => ({ ...current, roleName: event.target.value }));
+  }
+
+  function updateRateType(event: ChangeEvent<HTMLSelectElement>) {
+    setForm((current) => ({ ...current, rateType: event.target.value as "hourly" | "salary" }));
+  }
+
+  function updateBillRate(event: ChangeEvent<HTMLInputElement>) {
+    setForm((current) => ({ ...current, billRate: event.target.value }));
+  }
+
+  function updateStartDate(event: ChangeEvent<HTMLInputElement>) {
+    setForm((current) => ({ ...current, startDate: event.target.value }));
+  }
+
+  function updateEndDate(event: ChangeEvent<HTMLInputElement>) {
+    setForm((current) => ({ ...current, endDate: event.target.value }));
+  }
+
+  function updateDefaultProject(event: ChangeEvent<HTMLInputElement>) {
+    setForm((current) => ({ ...current, isDefault: event.target.checked }));
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -90,7 +126,7 @@ export function ProjectAssignmentsPanel() {
         <form className="mt-4 grid gap-3" onSubmit={submit}>
           <div className="grid gap-2">
             <label className="text-sm font-medium">Employee</label>
-            <Input placeholder="Search by employee name, ID, or email" value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} />
+            <Input placeholder="Search by employee name, ID, or email" value={employeeSearch} onChange={updateEmployeeSearch} />
             <div className="max-h-52 overflow-auto rounded-md border border-border bg-white">
               {filteredEmployees.map((employee) => (
                 <button
@@ -113,21 +149,21 @@ export function ProjectAssignmentsPanel() {
             </div>
             {selectedEmployee && <div className="rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-sm text-primary">Selected: {selectedEmployee.fullName} · {selectedEmployee.employeeNumber}</div>}
           </div>
-          <Input required placeholder="Client name" value={form.clientName} onChange={(event) => setForm((current) => ({ ...current, clientName: event.target.value }))} />
-          <Input required placeholder="Project name" value={form.projectName} onChange={(event) => setForm((current) => ({ ...current, projectName: event.target.value }))} />
-          <Input placeholder="Role / billing title" value={form.roleName} onChange={(event) => setForm((current) => ({ ...current, roleName: event.target.value }))} />
+          <Input required placeholder="Client name" value={form.clientName} onChange={updateClientName} />
+          <Input required placeholder="Project name" value={form.projectName} onChange={updateProjectName} />
+          <Input placeholder="Role / billing title" value={form.roleName} onChange={updateRoleName} />
           <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
-            <Select value={form.rateType} onChange={(event) => setForm((current) => ({ ...current, rateType: event.target.value as "hourly" | "salary" }))}>
+            <Select value={form.rateType} onChange={updateRateType}>
               <option value="hourly">Per hour</option>
               <option value="salary">Salary</option>
             </Select>
-            <Input min={0} placeholder={form.rateType === "salary" ? "Salary amount" : "Hourly bill rate"} step={0.01} type="number" value={form.billRate} onChange={(event) => setForm((current) => ({ ...current, billRate: event.target.value }))} />
+            <Input min={0} placeholder={form.rateType === "salary" ? "Salary amount" : "Hourly bill rate"} step={0.01} type="number" value={form.billRate} onChange={updateBillRate} />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-medium">Start date<Input type="date" value={form.startDate} onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))} /></label>
-            <label className="text-sm font-medium">End date<Input type="date" value={form.endDate} onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))} /></label>
+            <label className="text-sm font-medium">Start date<Input type="date" value={form.startDate} onChange={updateStartDate} /></label>
+            <label className="text-sm font-medium">End date<Input type="date" value={form.endDate} onChange={updateEndDate} /></label>
           </div>
-          <label className="flex items-center gap-2 text-sm"><input checked={form.isDefault} onChange={(event) => setForm((current) => ({ ...current, isDefault: event.target.checked }))} type="checkbox" />Use as employee default project</label>
+          <label className="flex items-center gap-2 text-sm"><input checked={form.isDefault} onChange={updateDefaultProject} type="checkbox" />Use as employee default project</label>
           {(formError || createAssignment.error) && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{formError ?? createAssignment.error?.message}</div>}
           <Button disabled={createAssignment.isPending} type="submit"><Plus className="size-4" />Assign project</Button>
         </form>
