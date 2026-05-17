@@ -5,7 +5,11 @@
   "type": "module",
   "types": "./src/index.tsx",
   "exports": {
-    ".": "./src/index.tsx"
+    ".": {
+      "types": "./src/index.tsx",
+      "import": "./src/index.tsx",
+      "default": "./src/index.tsx"
+    }
   },
   "dependencies": {
     "@vertechie/utils": "workspace:*",
