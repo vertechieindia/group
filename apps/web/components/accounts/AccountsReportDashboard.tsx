@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type ChangeEvent, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button, Card, Input, Skeleton } from "@vertechie/ui";
 import { currencyNumber } from "@vertechie/utils";
@@ -13,6 +13,14 @@ export function AccountsReportDashboard() {
     endDate: range.endDate || undefined
   }), [range]);
   const { data, isLoading } = useTimesheetReports(filters);
+  function updateStartDate(event: ChangeEvent<HTMLInputElement>) {
+    setRange((current) => ({ ...current, startDate: event.target.value }));
+  }
+
+  function updateEndDate(event: ChangeEvent<HTMLInputElement>) {
+    setRange((current) => ({ ...current, endDate: event.target.value }));
+  }
+
   if (isLoading || !data) return <Skeleton className="h-96 w-full" />;
 
   const payrollMetrics = [
@@ -41,8 +49,8 @@ export function AccountsReportDashboard() {
             <p className="text-sm text-muted-foreground">Filter employee payable status, salaries, and timesheet totals by date range.</p>
           </div>
           <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-[180px_180px_auto]">
-            <label className="text-sm font-medium">Start date<Input type="date" value={range.startDate} onChange={(event) => setRange((current) => ({ ...current, startDate: event.target.value }))} /></label>
-            <label className="text-sm font-medium">End date<Input type="date" value={range.endDate} onChange={(event) => setRange((current) => ({ ...current, endDate: event.target.value }))} /></label>
+            <label className="text-sm font-medium">Start date<Input type="date" value={range.startDate} onChange={updateStartDate} /></label>
+            <label className="text-sm font-medium">End date<Input type="date" value={range.endDate} onChange={updateEndDate} /></label>
             <Button className="self-end bg-white text-foreground ring-1 ring-border hover:bg-muted" type="button" onClick={() => setRange(defaultRange)}>This month</Button>
           </div>
         </div>
