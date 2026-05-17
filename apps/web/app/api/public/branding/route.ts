@@ -4,7 +4,7 @@ import { fallbackLogoForEntity } from "@/lib/brand-assets";
 
 export async function GET(request: Request) {
   const company = new URL(request.url).searchParams.get("company");
-  if (!company) return NextResponse.json({ brandName: "VerTechie Group", brandLogoUrl: "/logos/vertechie-logo.jpg" });
+  if (!company) return NextResponse.json({ brandName: "VerTechie Group LLC", brandLogoUrl: "/logos/vertechie-logo.jpg" });
 
   const supabase = createAdminSupabaseClient();
   const { data, error } = await supabase
@@ -14,10 +14,10 @@ export async function GET(request: Request) {
     .is("deleted_at", null)
     .maybeSingle();
 
-  if (error) return NextResponse.json({ brandName: "VerTechie Group", brandLogoUrl: "/logos/vertechie-logo.jpg" });
+  if (error) return NextResponse.json({ brandName: "VerTechie Group LLC", brandLogoUrl: "/logos/vertechie-logo.jpg" });
 
   return NextResponse.json({
-    brandName: data?.brand_name || data?.name || "VerTechie Group",
+    brandName: data?.brand_name || data?.name || "VerTechie Group LLC",
     brandLogoUrl: data?.brand_logo_url || fallbackLogoForEntity({ name: data?.name, slug: data?.slug, portalSlug: data?.portal_slug })
   });
 }

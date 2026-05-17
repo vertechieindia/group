@@ -1,6 +1,6 @@
 insert into public.business_entities (name, legal_name, slug)
 values
-  ('VerTechie LLC', 'VerTechie LLC', 'vertechie-llc'),
+  ('VerTechie Group LLC', 'VerTechie Group LLC', 'vertechie-group-llc'),
   ('Code4U.AI', 'Code4U.AI', 'code4u-ai'),
   ('XeroBookz', 'XeroBookz', 'xerobookz'),
   ('FavNFresh', 'FavNFresh', 'favnfresh'),

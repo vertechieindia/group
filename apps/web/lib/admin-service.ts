@@ -453,6 +453,9 @@ export class AdminService {
     }
 
     if (!input.companyName?.trim()) throw new Error("COMPANY_NAME_REQUIRED");
+    const existingEntity = await this.findReusableCompanyAdminEntity(input.companyName);
+    if (existingEntity) return existingEntity;
+
     const slug = await this.uniqueEntitySlug(input.companyName);
     const { data, error } = await this.admin
       .from("business_entities")
@@ -472,6 +475,31 @@ export class AdminService {
     if (error) throw error;
     await this.seedSystemCompanyRoles(data.id);
     await writeAudit(this.ctx, { action: "admin.company_created", resourceType: "business_entity", resourceId: data.id, entityId: data.id, metadata: { companyName: input.companyName, slug } });
+    return mapEntity(data);
+  }
+
+  private async findReusableCompanyAdminEntity(companyName: string): Promise<BusinessEntity | null> {
+    const slug = slugify(companyName);
+    const { data, error } = await this.admin
+      .from("business_entities")
+      .select(entitySelect)
+      .or(`name.eq.${companyName},slug.eq.${slug},portal_slug.eq.${slug}`)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+
+    const { data: admins, error: adminError } = await this.admin
+      .from("profiles")
+      .select("id")
+      .eq("entity_id", data.id)
+      .eq("role", "company_admin")
+      .is("deleted_at", null)
+      .limit(1);
+    if (adminError) throw adminError;
+    if (admins?.length) throw new Error("COMPANY_ADMIN_ALREADY_EXISTS");
+
+    await this.seedSystemCompanyRoles(data.id);
     return mapEntity(data);
   }
 
@@ -548,21 +576,16 @@ export class AdminService {
     }
 
     try {
+      const email = buildCompanyAdminInviteEmail({
+        ...input,
+        setupInviteUrl,
+        appUrl
+      });
       await sendTransactionalEmail({
         to: input.email,
-        subject: `Set up ${input.entity.name} in VerTechie Group Workforce OS`,
-        html: `
-          <div style="font-family:Arial,sans-serif;line-height:1.55;color:#0f172a">
-            <h2>Welcome to VerTechie Group Workforce OS</h2>
-            <p>Hello ${escapeHtml(input.fullName)},</p>
-            <p>Your company admin account for <strong>${escapeHtml(input.entity.name)}</strong> has been created.</p>
-            <p><strong>Login email:</strong> ${escapeHtml(input.email)}<br />
-            <strong>Temporary password:</strong> ${escapeHtml(input.password)}</p>
-            <p>Open the secure setup link below, sign in, and complete your company profile, branding, compliance identity, contacts, logo, home state, EIN, E-Verify number, and HR details.</p>
-            <p><a href="${setupInviteUrl}" style="display:inline-block;background:#0f766e;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none">Set up company profile</a></p>
-            <p>Company workspace URL: <a href="${setupInviteUrl}">${setupInviteUrl}</a></p>
-          </div>
-        `
+        subject: `${input.entity.name} admin access for Workforce OS`,
+        html: email.html,
+        text: email.text
       });
       return { setupInviteUrl, emailDeliveryStatus: "sent" as const, emailDeliveryError: null };
     } catch (error) {
@@ -634,4 +657,132 @@ function readableEmailError(error: unknown) {
     }
   }
   return message;
+}
+
+function buildCompanyAdminInviteEmail(input: { email: string; fullName: string; password: string; entity: BusinessEntity; setupInviteUrl: string; appUrl: string }) {
+  const companyName = escapeHtml(input.entity.name);
+  const fullName = escapeHtml(input.fullName);
+  const email = escapeHtml(input.email);
+  const password = escapeHtml(input.password);
+  const setupUrl = escapeHtml(input.setupInviteUrl);
+  const logoUrl = `${input.appUrl}/logos/vertechie-logo.jpg`;
+  const supportEmail = process.env.RESEND_REPLY_TO_EMAIL || "support@vertechiegroup.com";
+
+  const text = [
+    `Welcome to VerTechie Group LLC Workforce OS`,
+    ``,
+    `Hello ${input.fullName},`,
+    ``,
+    `Your company administrator access has been created for ${input.entity.name}.`,
+    ``,
+    `Sign-in email: ${input.email}`,
+    `Temporary password: ${input.password}`,
+    ``,
+    `Setup link: ${input.setupInviteUrl}`,
+    ``,
+    `Please sign in, complete your company profile, upload branding, add company identity details, configure HR contacts, and review your workspace settings.`,
+    ``,
+    `For security, change this temporary password after your first sign-in.`,
+    ``,
+    `Need help? Reply to this email or contact ${supportEmail}.`,
+    ``,
+    `VerTechie Group LLC Workforce OS`
+  ].join("\n");
+
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${companyName} admin access</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f4f7f9;color:#111827;font-family:Arial,Helvetica,sans-serif;">
+    <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">
+      Your ${companyName} administrator access is ready. Complete your company profile in Workforce OS.
+    </span>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f7f9;margin:0;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:680px;background:#ffffff;border:1px solid #dbe5ea;border-radius:14px;overflow:hidden;">
+            <tr>
+              <td style="padding:26px 30px;background:#0f766e;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="vertical-align:middle;">
+                      <img src="${logoUrl}" width="42" height="42" alt="VerTechie Group LLC" style="display:block;border:0;border-radius:8px;background:#ffffff;" />
+                    </td>
+                    <td style="padding-left:14px;vertical-align:middle;">
+                      <div style="font-size:18px;line-height:24px;font-weight:700;color:#ffffff;">VerTechie Group LLC</div>
+                      <div style="font-size:13px;line-height:18px;color:#ccfbf1;">Workforce Operating System</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:34px 30px 12px;">
+                <h1 style="margin:0;font-size:26px;line-height:34px;color:#111827;font-weight:700;">Welcome to Workforce OS</h1>
+                <p style="margin:16px 0 0;font-size:15px;line-height:24px;color:#374151;">Hello ${fullName},</p>
+                <p style="margin:12px 0 0;font-size:15px;line-height:24px;color:#374151;">
+                  Your company administrator access has been created for <strong style="color:#111827;">${companyName}</strong>. Use the secure setup link below to sign in and complete your company workspace.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 30px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #dbe5ea;border-radius:12px;background:#f8fafc;">
+                  <tr>
+                    <td style="padding:18px 20px;">
+                      <div style="font-size:13px;line-height:18px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.02em;">Account details</div>
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:12px;">
+                        <tr>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#64748b;width:155px;">Sign-in email</td>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#111827;font-weight:700;">${email}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#64748b;width:155px;">Temporary password</td>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#111827;font-weight:700;">${password}</td>
+                        </tr>
+                      </table>
+                      <p style="margin:12px 0 0;font-size:13px;line-height:20px;color:#64748b;">For security, change this temporary password after your first sign-in.</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 30px 24px;">
+                <p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#374151;">During setup, you can add company branding, legal identity, home state, EIN, E-Verify number, HR contacts, logo, and workspace preferences.</p>
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="border-radius:8px;background:#0f766e;">
+                      <a href="${setupUrl}" style="display:inline-block;padding:13px 18px;font-size:15px;line-height:20px;color:#ffffff;text-decoration:none;font-weight:700;border-radius:8px;">Open company setup</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:18px 0 0;font-size:13px;line-height:21px;color:#64748b;">If the button does not open, copy and paste this link into your browser:<br /><a href="${setupUrl}" style="color:#0f766e;text-decoration:underline;word-break:break-all;">${setupUrl}</a></p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 30px 28px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #e5edf2;">
+                  <tr>
+                    <td style="padding-top:20px;font-size:13px;line-height:21px;color:#64748b;">
+                      This message was sent because a VerTechie Group LLC super administrator created a company admin account for ${companyName}. If you were not expecting this, reply to this email or contact ${escapeHtml(supportEmail)}.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+          <div style="max-width:680px;margin:14px auto 0;text-align:center;font-size:12px;line-height:18px;color:#94a3b8;">
+            VerTechie Group LLC Workforce OS
+          </div>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  return { html, text };
 }

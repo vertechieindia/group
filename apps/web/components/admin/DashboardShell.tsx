@@ -11,7 +11,7 @@ import { TenantFavicon } from "@/components/branding/TenantFavicon";
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { data, isLoading } = useCurrentUser();
   const pathname = usePathname();
-  const brandName = data?.entity.brandName || data?.entity.name || "Workforce OS";
+  const brandName = data?.entity.brandName || data?.entity.name || "VerTechie Group LLC";
   const logo = data?.entity.brandLogoUrl || "/logos/vertechie-logo.jpg";
   const canAdmin = data?.role === "super_admin" || data?.role === "admin" || data?.role === "company_admin";
   const canAccounts = canAdmin || data?.role === "accounts_manager";
@@ -90,7 +90,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <UserCog className="size-5 text-primary" />
               <div className="mt-3 text-sm font-semibold">{data?.fullName}</div>
               <div className="mt-1 text-xs leading-5 text-muted-foreground">{data?.email}</div>
-              <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"><BarChart3 className="size-4 text-primary" /> Entity scoped access</div>
+              <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"><BarChart3 className="size-4 text-primary" /> {data?.role === "super_admin" ? "Platform owner access" : "Entity scoped access"}</div>
             </>
           )}
         </div>

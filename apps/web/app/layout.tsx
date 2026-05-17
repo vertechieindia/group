@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "VerTechie Group Workforce OS",
+  title: "VerTechie Group LLC Workforce OS",
   description: "Enterprise workforce, HR, ATS, attendance, and timesheet operations platform.",
   icons: {
     icon: [

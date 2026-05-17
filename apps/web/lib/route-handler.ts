@@ -27,6 +27,7 @@ export async function apiHandler<T>(
     if (message === "UNAUTHENTICATED") return fail("UNAUTHENTICATED", "Authentication is required.", requestId, 401);
     if (message === "ACCOUNT_INACTIVE") return fail("ACCOUNT_INACTIVE", "This account or company workspace is currently inactive.", requestId, 403);
     if (message === "FORBIDDEN" || message === "ENTITY_SCOPE_VIOLATION") return fail("FORBIDDEN", "You do not have access to this resource.", requestId, 403);
+    if (message === "COMPANY_ADMIN_ALREADY_EXISTS") return fail(message, "A company admin already exists for this company.", requestId, 409);
     if (message === "TIMESHEET_LOCKED" || message === "INVALID_STATUS_TRANSITION") return fail(message, "The timesheet cannot be changed in its current status.", requestId, 409);
     if (message === "REJECTION_REASON_REQUIRED") return fail(message, "A rejection or delete/refill reason is required.", requestId, 422);
     if (message.includes("NEXT_PUBLIC_SUPABASE_URL") || message.includes("NEXT_PUBLIC_SUPABASE_ANON_KEY")) {

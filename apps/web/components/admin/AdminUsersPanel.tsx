@@ -84,6 +84,8 @@ export function AdminUsersPanel() {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    createUser.reset();
+    setCreatedInvite(null);
     if (!effectiveEntityId) return;
     const created = await createUser.mutateAsync({
       entityId: effectiveEntityId,
@@ -222,7 +224,7 @@ export function AdminUsersPanel() {
               </div>
             </div>
           )}
-          {createUser.error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{createUser.error.message}</div>}
+          {createUser.error && !createdInvite && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{createUser.error.message}</div>}
           {createdInvite?.setupInviteUrl && (
             <div className="rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-sm">
               <div className="font-medium text-primary">Company admin setup invite created</div>

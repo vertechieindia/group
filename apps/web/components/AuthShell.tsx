@@ -18,7 +18,7 @@ export function AuthShell({ mode }: { mode: "login" | "signup" | "forgot" | "inv
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") ?? "/timesheets";
   const company = searchParams.get("company");
-  const [branding, setBranding] = useState<PublicBranding>({ brandName: "VerTechie Group", brandLogoUrl: "/logos/vertechie-logo.jpg" });
+  const [branding, setBranding] = useState<PublicBranding>({ brandName: "VerTechie Group LLC", brandLogoUrl: "/logos/vertechie-logo.jpg" });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -36,7 +36,7 @@ export function AuthShell({ mode }: { mode: "login" | "signup" | "forgot" | "inv
     fetch(`/api/public/branding?company=${encodeURIComponent(company)}`)
       .then((response) => response.json())
       .then((payload: PublicBranding) => setBranding(payload))
-      .catch(() => setBranding({ brandName: "VerTechie Group", brandLogoUrl: "/logos/vertechie-logo.jpg" }));
+      .catch(() => setBranding({ brandName: "VerTechie Group LLC", brandLogoUrl: "/logos/vertechie-logo.jpg" }));
   }, [company]);
 
   useEffect(() => {

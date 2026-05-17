@@ -7,6 +7,8 @@ export async function sendTransactionalEmail(input: {
   to: string;
   subject: string;
   html: string;
+  text?: string;
+  replyTo?: string;
   attachments?: EmailAttachment[];
 }) {
   const apiKey = process.env.RESEND_API_KEY || process.env.RESEND_API;
@@ -24,6 +26,8 @@ export async function sendTransactionalEmail(input: {
       to: input.to,
       subject: input.subject,
       html: input.html,
+      text: input.text,
+      reply_to: input.replyTo || process.env.RESEND_REPLY_TO_EMAIL || undefined,
       attachments: input.attachments ?? []
     })
   });

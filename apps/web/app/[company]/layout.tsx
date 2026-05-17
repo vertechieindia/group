@@ -11,7 +11,7 @@ export async function generateMetadata({ params }: { params: { company: string }
     .is("deleted_at", null)
     .maybeSingle();
 
-  const name = entity?.brand_name || entity?.name || "VerTechie Group";
+  const name = entity?.brand_name || entity?.name || "VerTechie Group LLC";
   const icon = entity?.brand_logo_url || fallbackLogoForEntity({ name: entity?.name, slug: entity?.slug, portalSlug: entity?.portal_slug });
 
   return {
