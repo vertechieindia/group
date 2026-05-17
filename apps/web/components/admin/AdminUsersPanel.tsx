@@ -74,7 +74,7 @@ export function AdminUsersPanel() {
   });
   const [selectedCompanyRoles, setSelectedCompanyRoles] = useState<string[]>([]);
   const [passwordEdits, setPasswordEdits] = useState<Record<string, string>>({});
-  const [createdInvite, setCreatedInvite] = useState<{ email?: string; temporaryPassword?: string; setupInviteUrl?: string | null; emailDeliveryStatus?: string | null } | null>(null);
+  const [createdInvite, setCreatedInvite] = useState<{ email?: string; temporaryPassword?: string; setupInviteUrl?: string | null; emailDeliveryStatus?: string | null; emailDeliveryError?: string | null } | null>(null);
 
   useEffect(() => {
     if (availableRoles.length && !availableRoles.includes(form.role)) {
@@ -94,7 +94,7 @@ export function AdminUsersPanel() {
       employeeNumber: form.employeeNumber || undefined,
       companyRoleIds: selectedCompanyRoles
     });
-    setCreatedInvite({ email: form.email, temporaryPassword: form.password, setupInviteUrl: created.setupInviteUrl, emailDeliveryStatus: created.emailDeliveryStatus });
+    setCreatedInvite({ email: form.email, temporaryPassword: form.password, setupInviteUrl: created.setupInviteUrl, emailDeliveryStatus: created.emailDeliveryStatus, emailDeliveryError: created.emailDeliveryError });
     setForm({ companyName: "", fullName: "", email: "", password: "", role: "employee", employeeNumber: "", title: "", department: "" });
     setSelectedCompanyRoles([]);
   }
@@ -230,8 +230,9 @@ export function AdminUsersPanel() {
               {createdInvite.emailDeliveryStatus !== "sent" && <div className="mt-1 text-muted-foreground">Temporary password: {createdInvite.temporaryPassword}</div>}
               <div className="mt-1 break-all text-muted-foreground">{createdInvite.setupInviteUrl}</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Email delivery: {createdInvite.emailDeliveryStatus === "sent" ? "sent" : createdInvite.emailDeliveryStatus === "not_configured" ? "not sent because RESEND_API_KEY is not configured" : "not confirmed"}
+                Email delivery: {createdInvite.emailDeliveryStatus === "sent" ? "sent" : createdInvite.emailDeliveryStatus === "not_configured" ? "not sent because RESEND_API_KEY is not configured" : "failed"}
               </div>
+              {createdInvite.emailDeliveryError && <div className="mt-2 rounded border border-destructive/20 bg-destructive/10 px-2 py-1 text-xs text-destructive">{createdInvite.emailDeliveryError}</div>}
             </div>
           )}
           <Button disabled={createUser.isPending} type="submit"><Plus className="size-4" />Create user</Button>

@@ -370,6 +370,7 @@ export type AdminUser = {
   isActive: boolean;
   setupInviteUrl?: string | null;
   emailDeliveryStatus?: "sent" | "not_configured" | "failed" | null;
+  emailDeliveryError?: string | null;
   companyRoles: Array<{ id: string; name: string; slug: string; isSystem?: boolean }>;
 };
 

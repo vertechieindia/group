@@ -220,14 +220,14 @@ export class AdminService {
         entity,
         portalSlug: entity.portalSlug || entity.slug
       })
-      : { setupInviteUrl: null, emailDeliveryStatus: null as AdminUser["emailDeliveryStatus"] };
+      : { setupInviteUrl: null, emailDeliveryStatus: null as AdminUser["emailDeliveryStatus"], emailDeliveryError: null };
 
     await writeAudit(this.ctx, {
       action: "admin.user_created",
       resourceType: "profile",
       resourceId: user.id,
       entityId: input.entityId,
-      metadata: { role: input.role, companyName: input.companyName, setupInviteUrl: inviteResult.setupInviteUrl, emailDeliveryStatus: inviteResult.emailDeliveryStatus }
+      metadata: { role: input.role, companyName: input.companyName, setupInviteUrl: inviteResult.setupInviteUrl, emailDeliveryStatus: inviteResult.emailDeliveryStatus, emailDeliveryError: inviteResult.emailDeliveryError }
     });
     const createdUser = (await this.listUsers(input.entityId)).find((profile) => profile.id === user.id);
     return createdUser ? { ...createdUser, ...inviteResult } : createdUser;
@@ -544,7 +544,7 @@ export class AdminService {
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
     const setupInviteUrl = `${appUrl}/${input.portalSlug}/admin/company-setup`;
     if (!process.env.RESEND_API_KEY && !process.env.RESEND_API) {
-      return { setupInviteUrl, emailDeliveryStatus: "not_configured" as const };
+      return { setupInviteUrl, emailDeliveryStatus: "not_configured" as const, emailDeliveryError: "RESEND_API_KEY is not configured." };
     }
 
     try {
@@ -564,9 +564,9 @@ export class AdminService {
           </div>
         `
       });
-      return { setupInviteUrl, emailDeliveryStatus: "sent" as const };
-    } catch {
-      return { setupInviteUrl, emailDeliveryStatus: "failed" as const };
+      return { setupInviteUrl, emailDeliveryStatus: "sent" as const, emailDeliveryError: null };
+    } catch (error) {
+      return { setupInviteUrl, emailDeliveryStatus: "failed" as const, emailDeliveryError: readableEmailError(error) };
     }
   }
 }
@@ -620,4 +620,18 @@ function escapeHtml(value: string) {
 
 function relation<T>(value: T | T[] | null | undefined): T | undefined {
   return Array.isArray(value) ? value[0] : value ?? undefined;
+}
+
+function readableEmailError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const jsonStart = message.indexOf("{");
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(message.slice(jsonStart)) as { message?: string };
+      if (parsed.message) return parsed.message;
+    } catch {
+      return message;
+    }
+  }
+  return message;
 }
