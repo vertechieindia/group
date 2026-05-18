@@ -283,7 +283,9 @@ export function OfferTemplatesPanel() {
       companyEin: offerForm.companyEin || null,
       eVerifyNumber: offerForm.eVerifyNumber || null,
       companyHomeState: offerForm.companyHomeState,
+      homeStateBusinessId: branding?.homeStateBusinessId || null,
       operatingStates: branding?.operatingStates?.length ? branding.operatingStates : [offerForm.companyHomeState],
+      operatingStateRegistrations: branding?.operatingStateRegistrations || [],
       companyPhone: offerForm.companyPhone || null,
       companyWebsite: offerForm.companyWebsite || null,
       hrEmail: offerForm.signerEmail || null

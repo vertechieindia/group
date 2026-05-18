@@ -160,7 +160,12 @@ export const entityBrandingSchema = z.object({
   companyEin: z.string().trim().max(40).optional().nullable(),
   eVerifyNumber: z.string().trim().max(80).optional().nullable(),
   companyHomeState: z.string().trim().length(2).optional().nullable(),
+  homeStateBusinessId: z.string().trim().max(120).optional().nullable(),
   operatingStates: z.array(z.string().trim().length(2)).max(60).default([]),
+  operatingStateRegistrations: z.array(z.object({
+    state: z.string().trim().length(2),
+    foreignControlNumber: z.string().trim().max(120).optional().nullable()
+  })).max(60).default([]),
   companyPhone: z.string().trim().max(60).optional().nullable(),
   companyWebsite: z.string().trim().max(180).optional().nullable(),
   hrEmail: z.string().trim().email().optional().nullable()
@@ -351,7 +356,9 @@ export type BusinessEntity = {
   companyEin: string | null;
   eVerifyNumber: string | null;
   companyHomeState: string | null;
+  homeStateBusinessId: string | null;
   operatingStates: string[];
+  operatingStateRegistrations: Array<{ state: string; foreignControlNumber: string | null }>;
   companyPhone: string | null;
   companyWebsite: string | null;
   hrEmail: string | null;

@@ -8,6 +8,11 @@ import { useBranding, useCurrentUser, useUpdateBranding } from "@/features/admin
 import { createBrowserSupabaseClient } from "@/features/timesheets/supabase-browser";
 import { stateName, US_STATES } from "@/lib/offer-compliance";
 
+type StateRegistration = {
+  state: string;
+  foreignControlNumber: string | null;
+};
+
 export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean }) {
   const { data: me } = useCurrentUser();
   const entityId = me?.entity.id;
@@ -25,7 +30,9 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
     companyEin: "",
     eVerifyNumber: "",
     companyHomeState: "KS",
+    homeStateBusinessId: "",
     operatingStates: ["KS"],
+    operatingStateRegistrations: [] as StateRegistration[],
     companyPhone: "",
     companyWebsite: "",
     hrEmail: ""
@@ -43,7 +50,9 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
       companyEin: data.companyEin || "",
       eVerifyNumber: data.eVerifyNumber || "",
       companyHomeState: data.companyHomeState || "KS",
+      homeStateBusinessId: data.homeStateBusinessId || "",
       operatingStates: data.operatingStates?.length ? data.operatingStates : data.companyHomeState ? [data.companyHomeState] : [],
+      operatingStateRegistrations: data.operatingStateRegistrations || [],
       companyPhone: data.companyPhone || "",
       companyWebsite: data.companyWebsite || "",
       hrEmail: data.hrEmail || ""
@@ -53,6 +62,7 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!entityId) return;
+    const operatingStates = Array.from(new Set([form.companyHomeState, ...form.operatingStates])).filter(Boolean);
     await updateBranding.mutateAsync({
       entityId,
       brandName: form.brandName,
@@ -64,7 +74,14 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
       companyEin: form.companyEin || null,
       eVerifyNumber: form.eVerifyNumber || null,
       companyHomeState: form.companyHomeState,
-      operatingStates: Array.from(new Set([form.companyHomeState, ...form.operatingStates])).filter(Boolean),
+      homeStateBusinessId: form.homeStateBusinessId || null,
+      operatingStates,
+      operatingStateRegistrations: operatingStates
+        .filter((state) => state !== form.companyHomeState)
+        .map((state) => ({
+          state,
+          foreignControlNumber: form.operatingStateRegistrations.find((registration) => registration.state === state)?.foreignControlNumber || null
+        })),
       companyPhone: form.companyPhone || null,
       companyWebsite: form.companyWebsite || null,
       hrEmail: form.hrEmail || null
@@ -103,6 +120,19 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
     }
   }
 
+  const selectedOperatingStates = Array.from(new Set([form.companyHomeState, ...form.operatingStates])).filter(Boolean);
+  const foreignOperatingStates = selectedOperatingStates.filter((state) => state !== form.companyHomeState);
+
+  function updateForeignControlNumber(state: string, value: string) {
+    setForm((current) => {
+      const existing = current.operatingStateRegistrations.filter((registration) => registration.state !== state);
+      return {
+        ...current,
+        operatingStateRegistrations: [...existing, { state, foreignControlNumber: value }]
+      };
+    });
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
       <Card className="p-5">
@@ -135,10 +165,11 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
             <label className="text-sm font-medium">Company EIN<Input required={setupMode} value={form.companyEin} onChange={(event) => setForm((current) => ({ ...current, companyEin: event.target.value }))} placeholder="XX-XXXXXXX" /></label>
             <label className="text-sm font-medium">E-Verify number<Input value={form.eVerifyNumber} onChange={(event) => setForm((current) => ({ ...current, eVerifyNumber: event.target.value }))} /></label>
             <label className="text-sm font-medium">Home state
-              <select className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-primary/30" value={form.companyHomeState} onChange={(event) => setForm((current) => ({ ...current, companyHomeState: event.target.value }))}>
+              <select className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-primary/30" value={form.companyHomeState} onChange={(event) => setForm((current) => ({ ...current, companyHomeState: event.target.value, operatingStates: Array.from(new Set([...current.operatingStates, event.target.value])) }))}>
                 {US_STATES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
               </select>
             </label>
+            <label className="text-sm font-medium">Home state Business ID<Input value={form.homeStateBusinessId} onChange={(event) => setForm((current) => ({ ...current, homeStateBusinessId: event.target.value }))} placeholder="State-issued business ID" /></label>
             <label className="text-sm font-medium">Company phone<Input required={setupMode} value={form.companyPhone} onChange={(event) => setForm((current) => ({ ...current, companyPhone: event.target.value }))} /></label>
             <label className="text-sm font-medium">Company website<Input required={setupMode} value={form.companyWebsite} onChange={(event) => setForm((current) => ({ ...current, companyWebsite: event.target.value }))} placeholder="https://company.com" /></label>
             <label className="text-sm font-medium">HR email<Input required={setupMode} inputMode="email" value={form.hrEmail} onChange={(event) => setForm((current) => ({ ...current, hrEmail: event.target.value }))} placeholder="hr@company.com" /></label>
@@ -149,7 +180,7 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
               <div className="text-xs text-muted-foreground">Add every state where this company may hire, run payroll, or manage employees.</div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {Array.from(new Set([form.companyHomeState, ...form.operatingStates])).filter(Boolean).map((code) => (
+              {selectedOperatingStates.map((code) => (
                 <span key={code} className="rounded-full border border-border bg-white px-2.5 py-1 text-xs font-medium">
                   {stateName(code)}
                 </span>
@@ -175,6 +206,30 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
                   </label>
                 );
               })}
+            </div>
+            <div className="grid gap-3 rounded-md border border-border bg-white p-3">
+              <div>
+                <div className="text-sm font-medium">State registration numbers</div>
+                <div className="text-xs text-muted-foreground">
+                  Home state uses the Business ID above. Add the Foreign Limited Liability Company control number for every other operating state where the company is registered.
+                </div>
+              </div>
+              {foreignOperatingStates.length ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {foreignOperatingStates.map((state) => (
+                    <label key={state} className="text-sm font-medium">
+                      {stateName(state)} foreign LLC control number
+                      <Input
+                        value={form.operatingStateRegistrations.find((registration) => registration.state === state)?.foreignControlNumber || ""}
+                        onChange={(event) => updateForeignControlNumber(state, event.target.value)}
+                        placeholder="Control number"
+                      />
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md bg-background px-3 py-2 text-sm text-muted-foreground">Select another operating state to add foreign LLC control numbers.</div>
+              )}
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
