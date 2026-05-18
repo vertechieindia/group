@@ -4,6 +4,7 @@ import { assertEntityScope, hasPermission, requirePermission, type RequestContex
 import { TimesheetRepository } from "./timesheet-repository";
 import { writeAudit } from "./audit";
 import { notifyEntityRole, notifyProfile } from "./notifications";
+import { buildTimesheetPdf } from "./timesheet-pdf";
 
 export class TimesheetService {
   private readonly repo: TimesheetRepository;
@@ -97,7 +98,7 @@ export class TimesheetService {
       const rows = await this.adminRepo.list({ ...filters, entityId });
       return rows.filter((timesheet) => supervisedEmployeeIds.includes(timesheet.employeeId));
     }
-    if (await hasPermission(this.ctx, "timesheet:view:entity", entityId)) {
+    if (await hasPermission(this.ctx, "timesheet:view:entity", entityId) || await hasPermission(this.ctx, "employee_lifecycle:manage:entity", entityId)) {
       return this.repo.list({ ...filters, entityId });
     }
 
@@ -347,6 +348,25 @@ export class TimesheetService {
     return toCsv(approved);
   }
 
+  async exportTimesheetPdf(id: string) {
+    const timesheet = await this.adminRepo.get(id);
+    await assertEntityScope(this.ctx, timesheet.entityId);
+    if (this.ctx.profile.id === timesheet.employeeProfileId) {
+      await requirePermission(this.ctx, "timesheet:view:self", timesheet.entityId);
+    } else {
+      await this.assertCanViewEmployeeTimesheet(timesheet);
+    }
+
+    await writeAudit(this.ctx, {
+      action: "timesheet.pdf_exported",
+      resourceType: "timesheet",
+      resourceId: timesheet.id,
+      entityId: timesheet.entityId,
+      metadata: { employeeId: timesheet.employeeId, status: timesheet.status }
+    });
+    return buildTimesheetPdf(timesheet);
+  }
+
   async reports(filters: ListTimesheetsInput) {
     const entityId = filters.entityId ?? this.ctx.profile.entityId;
     await assertEntityScope(this.ctx, entityId);
@@ -513,6 +533,12 @@ export class TimesheetService {
       return;
     }
     if (await hasPermission(this.ctx, permission, timesheet.entityId)) return;
+    await this.assertSupervisesTimesheet(timesheet);
+  }
+
+  private async assertCanViewEmployeeTimesheet(timesheet: Timesheet) {
+    if (["super_admin", "admin"].includes(this.ctx.profile.role) && await hasPermission(this.ctx, "timesheet:view:all")) return;
+    if (await hasPermission(this.ctx, "timesheet:view:entity", timesheet.entityId) || await hasPermission(this.ctx, "employee_lifecycle:manage:entity", timesheet.entityId)) return;
     await this.assertSupervisesTimesheet(timesheet);
   }
 

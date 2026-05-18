@@ -5,7 +5,7 @@ import { createRequestContext, type RequestContext } from "./request-context";
 export async function apiHandler<T>(
   request: Request,
   handler: (ctx: RequestContext) => Promise<T>,
-  options: { csv?: boolean } = {}
+  options: { csv?: boolean; pdf?: { filename: string } } = {}
 ) {
   const requestId = getRequestId(request);
   try {
@@ -16,6 +16,15 @@ export async function apiHandler<T>(
         headers: {
           "content-type": "text/csv",
           "content-disposition": `attachment; filename="timesheet-export-${new Date().toISOString().slice(0, 10)}.csv"`,
+          "x-request-id": requestId
+        }
+      });
+    }
+    if (options.pdf && data instanceof Uint8Array) {
+      return new Response(new Blob([data as BlobPart], { type: "application/pdf" }), {
+        headers: {
+          "content-type": "application/pdf",
+          "content-disposition": `attachment; filename="${options.pdf.filename}"`,
           "x-request-id": requestId
         }
       });

@@ -23,7 +23,12 @@ export function TimesheetDetail({ id }: { id: string }) {
             <h1 className="text-2xl font-semibold">{data.clientName ?? "Unassigned client"}</h1>
             <p className="text-sm text-muted-foreground">{data.periodStart} to {data.periodEnd} · {data.totalHours} total hours</p>
           </div>
-          <StatusBadge status={data.status} />
+          <div className="flex flex-wrap items-center gap-2">
+            <a className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 text-sm font-medium text-foreground hover:bg-muted" href={`/api/timesheets/${data.id}/export`}>
+              <Download className="size-4" />Download PDF
+            </a>
+            <StatusBadge status={data.status} />
+          </div>
         </div>
       </Card>
       <Card className="overflow-hidden">

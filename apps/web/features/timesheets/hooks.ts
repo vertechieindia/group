@@ -12,8 +12,8 @@ export function useTimesheetContext() {
   return useQuery({ queryKey: ["timesheet-context"], queryFn: timesheetApi.context });
 }
 
-export function useAccountTimesheets(filters?: ListTimesheetsInput) {
-  return useQuery({ queryKey: ["accounts-timesheets", filters], queryFn: () => timesheetApi.listForAccounts(filters) });
+export function useAccountTimesheets(filters?: ListTimesheetsInput, enabled = true) {
+  return useQuery({ queryKey: ["accounts-timesheets", filters], queryFn: () => timesheetApi.listForAccounts(filters), enabled });
 }
 
 export function useTimesheet(id: string) {

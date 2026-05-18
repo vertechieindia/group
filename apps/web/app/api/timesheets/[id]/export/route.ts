@@ -1,7 +1,8 @@
-import { listTimesheetsSchema } from "@vertechie/types";
-import { apiHandler, searchParams } from "@/lib/route-handler";
+import { apiHandler } from "@/lib/route-handler";
 import { TimesheetService } from "@/lib/timesheet-service";
 
-export async function GET(request: Request) {
-  return apiHandler(request, async (ctx) => new TimesheetService(ctx).exportPayroll(listTimesheetsSchema.parse(searchParams(request))), { csv: true });
+export async function GET(request: Request, { params }: { params: { id: string } }) {
+  return apiHandler(request, async (ctx) => new TimesheetService(ctx).exportTimesheetPdf(params.id), {
+    pdf: { filename: `timesheet-${params.id}.pdf` }
+  });
 }
