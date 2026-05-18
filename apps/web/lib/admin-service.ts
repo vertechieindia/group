@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createAdminSupabaseClient } from "@vertechie/db";
 import type { AdminCompanyDashboard, AdminUser, AppRole, BusinessEntity, CompanyRole, CreateAdminUserInput, CreateCompanyRoleInput, EntityBrandingInput, UpdateUserPasswordInput } from "@vertechie/types";
 import { assertEntityScope, requirePermission, type RequestContext } from "./request-context";
@@ -585,7 +587,8 @@ export class AdminService {
         to: input.email,
         subject: `${input.entity.name} admin access for Workforce OS`,
         html: email.html,
-        text: email.text
+        text: email.text,
+        attachments: email.attachments
       });
       return { setupInviteUrl, emailDeliveryStatus: "sent" as const, emailDeliveryError: null };
     } catch (error) {
@@ -665,7 +668,11 @@ function buildCompanyAdminInviteEmail(input: { email: string; fullName: string; 
   const email = escapeHtml(input.email);
   const password = escapeHtml(input.password);
   const setupUrl = escapeHtml(input.setupInviteUrl);
-  const logoUrl = `${input.appUrl}/logos/vertechie-logo.jpg`;
+  const logoContentId = "vertechie-logo";
+  const logoAttachment = buildInlineLogoAttachment(logoContentId);
+  const logoMarkup = logoAttachment
+    ? `<img src="cid:${logoContentId}" width="42" height="42" alt="VerTechie Group LLC" style="display:block;border:0;border-radius:8px;background:#ffffff;outline:none;text-decoration:none;" />`
+    : `<div style="width:42px;height:42px;border-radius:8px;background:#ffffff;color:#0f766e;font-size:14px;line-height:42px;font-weight:700;text-align:center;">VTG</div>`;
   const supportEmail = process.env.RESEND_REPLY_TO_EMAIL || "support@vertechiegroup.com";
 
   const text = [
@@ -709,7 +716,7 @@ function buildCompanyAdminInviteEmail(input: { email: string; fullName: string; 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                   <tr>
                     <td style="vertical-align:middle;">
-                      <img src="${logoUrl}" width="42" height="42" alt="VerTechie Group LLC" style="display:block;border:0;border-radius:8px;background:#ffffff;" />
+                      ${logoMarkup}
                     </td>
                     <td style="padding-left:14px;vertical-align:middle;">
                       <div style="font-size:18px;line-height:24px;font-weight:700;color:#ffffff;">VerTechie Group LLC</div>
@@ -784,5 +791,28 @@ function buildCompanyAdminInviteEmail(input: { email: string; fullName: string; 
   </body>
 </html>`;
 
-  return { html, text };
+  return { html, text, attachments: logoAttachment ? [logoAttachment] : undefined };
+}
+
+function buildInlineLogoAttachment(contentId: string) {
+  const candidates = [
+    join(process.cwd(), "public", "logos", "vertechie-logo.jpg"),
+    join(process.cwd(), "apps", "web", "public", "logos", "vertechie-logo.jpg")
+  ];
+
+  for (const path of candidates) {
+    try {
+      return {
+        filename: "vertechie-logo.jpg",
+        content: readFileSync(path).toString("base64"),
+        content_type: "image/jpeg",
+        content_id: contentId,
+        content_disposition: "inline" as const
+      };
+    } catch {
+      // Try the next known runtime path.
+    }
+  }
+
+  return null;
 }

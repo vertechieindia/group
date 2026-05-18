@@ -1,6 +1,9 @@
 type EmailAttachment = {
   filename: string;
   content: string;
+  content_type?: string;
+  content_id?: string;
+  content_disposition?: "attachment" | "inline";
 };
 
 export async function sendTransactionalEmail(input: {
