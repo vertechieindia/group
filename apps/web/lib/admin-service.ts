@@ -7,8 +7,8 @@ import { writeAudit } from "./audit";
 import { fallbackLogoForEntity } from "./brand-assets";
 import { sendTransactionalEmail } from "./email";
 
-const internalRoles = new Set(["super_admin", "admin", "company_admin", "hr", "accounts_manager", "recruiter", "marketing", "team_lead", "operations", "viewer", "employee"]);
-const companyAdminCreatableRoles = new Set<AppRole>(["hr", "accounts_manager", "team_lead", "employee", "recruiter"]);
+const internalRoles = new Set(["super_admin", "admin", "company_admin", "hr", "accounts_manager", "recruiter", "marketing", "team_lead", "operations", "viewer", "employee", "candidate"]);
+const companyAdminCreatableRoles = new Set<AppRole>(["hr", "accounts_manager", "team_lead", "employee", "candidate", "recruiter"]);
 const entitySelect = "id, name, legal_name, slug, brand_name, brand_logo_url, primary_color, accent_color, portal_slug, custom_domain, company_address, company_ein, e_verify_number, company_home_state, home_state_business_id, operating_states, operating_state_registrations, company_phone, company_website, hr_email";
 
 export class AdminService {
@@ -222,7 +222,15 @@ export class AdminService {
         entity,
         portalSlug: entity.portalSlug || entity.slug
       })
-      : { setupInviteUrl: null, emailDeliveryStatus: null as AdminUser["emailDeliveryStatus"], emailDeliveryError: null };
+      : await this.sendUserAccessInvite({
+        email: input.email,
+        fullName: input.fullName,
+        password: input.password,
+        role: input.role,
+        title: input.title ?? null,
+        entity,
+        portalSlug: entity.portalSlug || entity.slug
+      });
 
     await writeAudit(this.ctx, {
       action: "admin.user_created",
@@ -250,8 +258,16 @@ export class AdminService {
 
     const { error: updateError } = await this.admin.auth.admin.updateUserById(userId, { password: input.password });
     if (updateError) throw updateError;
-    await writeAudit(this.ctx, { action: "admin.user_password_updated", resourceType: "profile", resourceId: userId, entityId: profile.entity_id, metadata: { role: profile.role } });
-    return { updated: true };
+
+    const inviteResult = await this.sendPasswordUpdatedInvite(userId, input.password);
+    await writeAudit(this.ctx, {
+      action: "admin.user_password_updated",
+      resourceType: "profile",
+      resourceId: userId,
+      entityId: profile.entity_id,
+      metadata: { role: profile.role, emailDeliveryStatus: inviteResult.emailDeliveryStatus, emailDeliveryError: inviteResult.emailDeliveryError }
+    });
+    return { updated: true, ...inviteResult };
   }
 
   async holdCompanyServices(userId: string) {
@@ -598,6 +614,55 @@ export class AdminService {
       return { setupInviteUrl, emailDeliveryStatus: "failed" as const, emailDeliveryError: readableEmailError(error) };
     }
   }
+
+  private async sendUserAccessInvite(input: { email: string; fullName: string; password: string; role: AppRole; title?: string | null; entity: BusinessEntity; portalSlug: string }) {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
+    const accessInviteUrl = buildRoleLandingUrl(appUrl, input.portalSlug, input.role);
+    if (!process.env.RESEND_API_KEY && !process.env.RESEND_API) {
+      return { setupInviteUrl: accessInviteUrl, emailDeliveryStatus: "not_configured" as const, emailDeliveryError: "RESEND_API_KEY is not configured." };
+    }
+
+    try {
+      const email = buildUserAccessInviteEmail({
+        ...input,
+        accessInviteUrl,
+        appUrl
+      });
+      await sendTransactionalEmail({
+        to: input.email,
+        subject: `${input.entity.name} Workforce OS access`,
+        html: email.html,
+        text: email.text,
+        attachments: email.attachments
+      });
+      return { setupInviteUrl: accessInviteUrl, emailDeliveryStatus: "sent" as const, emailDeliveryError: null };
+    } catch (error) {
+      return { setupInviteUrl: accessInviteUrl, emailDeliveryStatus: "failed" as const, emailDeliveryError: readableEmailError(error) };
+    }
+  }
+
+  private async sendPasswordUpdatedInvite(userId: string, password: string) {
+    const { data, error } = await this.admin
+      .from("profiles")
+      .select(`id, entity_id, email, full_name, role, business_entities!profiles_entity_id_fkey(${entitySelect})`)
+      .eq("id", userId)
+      .is("deleted_at", null)
+      .single();
+    if (error || !data) return { setupInviteUrl: null, emailDeliveryStatus: "failed" as const, emailDeliveryError: "PROFILE_NOT_FOUND" };
+
+    const entityRow = relation(data.business_entities);
+    if (!entityRow) return { setupInviteUrl: null, emailDeliveryStatus: "failed" as const, emailDeliveryError: "ENTITY_NOT_FOUND" };
+    const entity = mapEntity(entityRow);
+    return this.sendUserAccessInvite({
+      email: data.email,
+      fullName: data.full_name,
+      password,
+      role: data.role as AppRole,
+      title: null,
+      entity,
+      portalSlug: entity.portalSlug || entity.slug
+    });
+  }
 }
 
 function mapEntity(row: any): BusinessEntity {
@@ -794,6 +859,172 @@ function buildCompanyAdminInviteEmail(input: { email: string; fullName: string; 
           <div style="max-width:680px;margin:14px auto 0;text-align:center;font-size:12px;line-height:18px;color:#94a3b8;">
             VerTechie Group LLC Workforce OS
           </div>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  return { html, text, attachments: logoAttachment ? [logoAttachment] : undefined };
+}
+
+function buildRoleLandingUrl(appUrl: string, portalSlug: string, role: AppRole) {
+  const defaultPathByRole: Partial<Record<AppRole, string>> = {
+    company_admin: `/${portalSlug}/admin/dashboard`,
+    admin: `/${portalSlug}/admin/dashboard`,
+    hr: `/${portalSlug}/hr/employees`,
+    accounts_manager: `/${portalSlug}/accounts/timesheets`,
+    team_lead: `/${portalSlug}/supervisor/learning`,
+    recruiter: `/${portalSlug}/hr/employees`,
+    marketing: `/${portalSlug}/hr/employees`,
+    operations: `/${portalSlug}/accounts/timesheets`,
+    employee: `/${portalSlug}/timesheets`,
+    candidate: `/${portalSlug}/timesheets`,
+    viewer: `/${portalSlug}/timesheets`
+  };
+  const nextPath = defaultPathByRole[role] ?? `/${portalSlug}/timesheets`;
+  return `${appUrl}/login?company=${encodeURIComponent(portalSlug)}&next=${encodeURIComponent(nextPath)}`;
+}
+
+function roleDisplayName(role: AppRole) {
+  const labels: Record<AppRole, string> = {
+    super_admin: "Super Admin",
+    admin: "Group Admin",
+    company_admin: "Company Admin",
+    hr: "HR Manager",
+    accounts_manager: "Accounts Manager",
+    recruiter: "Recruiter",
+    marketing: "Marketing",
+    team_lead: "Supervisor / Team Lead",
+    operations: "Operations",
+    viewer: "Viewer",
+    employee: "Employee",
+    candidate: "Candidate"
+  };
+  return labels[role];
+}
+
+function buildUserAccessInviteEmail(input: { email: string; fullName: string; password: string; role: AppRole; title?: string | null; entity: BusinessEntity; accessInviteUrl: string; appUrl: string }) {
+  const companyName = escapeHtml(input.entity.name);
+  const fullName = escapeHtml(input.fullName);
+  const email = escapeHtml(input.email);
+  const password = escapeHtml(input.password);
+  const accessUrl = escapeHtml(input.accessInviteUrl);
+  const roleName = escapeHtml(roleDisplayName(input.role));
+  const title = input.title ? escapeHtml(input.title) : null;
+  const logoContentId = "vertechie-logo";
+  const logoAttachment = buildInlineLogoAttachment(logoContentId);
+  const logoMarkup = logoAttachment
+    ? `<img src="cid:${logoContentId}" width="42" height="42" alt="VerTechie Group LLC" style="display:block;border:0;border-radius:8px;background:#ffffff;outline:none;text-decoration:none;" />`
+    : `<div style="width:42px;height:42px;border-radius:8px;background:#ffffff;color:#0f766e;font-size:14px;line-height:42px;font-weight:700;text-align:center;">VTG</div>`;
+  const supportEmail = process.env.RESEND_REPLY_TO_EMAIL || input.entity.hrEmail || "support@vertechiegroup.com";
+  const preheader = `Your ${companyName} Workforce OS account is ready. Sign in with the temporary password and complete your profile.`;
+
+  const text = [
+    `${companyName} Workforce OS access`,
+    ``,
+    `Hello ${input.fullName},`,
+    ``,
+    `Your Workforce OS account for ${input.entity.name} has been created.`,
+    `Access role: ${roleDisplayName(input.role)}${input.title ? ` - ${input.title}` : ""}`,
+    ``,
+    `Sign-in email: ${input.email}`,
+    `Temporary password: ${input.password}`,
+    ``,
+    `Open your workspace: ${input.accessInviteUrl}`,
+    ``,
+    `For security, change this temporary password after your first sign-in. Complete any assigned profile, onboarding, learning, or timesheet tasks inside the workspace.`,
+    ``,
+    `Need help? Reply to this email or contact ${supportEmail}.`
+  ].join("\n");
+
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${companyName} Workforce OS access</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f4f7f9;color:#111827;font-family:Arial,Helvetica,sans-serif;">
+    <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;">${preheader}</span>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f7f9;margin:0;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:680px;background:#ffffff;border:1px solid #dbe5ea;border-radius:14px;overflow:hidden;">
+            <tr>
+              <td style="padding:26px 30px;background:#0f766e;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="vertical-align:middle;">${logoMarkup}</td>
+                    <td style="padding-left:14px;vertical-align:middle;">
+                      <div style="font-size:18px;line-height:24px;font-weight:700;color:#ffffff;">VerTechie Group LLC</div>
+                      <div style="font-size:13px;line-height:18px;color:#ccfbf1;">Workforce Operating System</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:34px 30px 10px;">
+                <h1 style="margin:0;font-size:26px;line-height:34px;color:#111827;font-weight:700;">Your workspace access is ready</h1>
+                <p style="margin:16px 0 0;font-size:15px;line-height:24px;color:#374151;">Hello ${fullName},</p>
+                <p style="margin:12px 0 0;font-size:15px;line-height:24px;color:#374151;">
+                  An account has been created for you in <strong style="color:#111827;">${companyName}</strong> Workforce OS. Use the secure link below to sign in and begin your assigned workspace tasks.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 30px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #dbe5ea;border-radius:12px;background:#f8fafc;">
+                  <tr>
+                    <td style="padding:18px 20px;">
+                      <div style="font-size:13px;line-height:18px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.02em;">Account details</div>
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:12px;">
+                        <tr>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#64748b;width:155px;">Sign-in email</td>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#111827;font-weight:700;">${email}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#64748b;width:155px;">Temporary password</td>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#111827;font-weight:700;">${password}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#64748b;width:155px;">Access role</td>
+                          <td style="padding:8px 0;font-size:14px;line-height:20px;color:#111827;font-weight:700;">${roleName}${title ? `, ${title}` : ""}</td>
+                        </tr>
+                      </table>
+                      <p style="margin:12px 0 0;font-size:13px;line-height:20px;color:#64748b;">For security, change this temporary password after your first sign-in.</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 30px 24px;">
+                <p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#374151;">After signing in, complete your profile and any assigned onboarding, learning, timesheet, or operational items. Your access is scoped to your company role.</p>
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="border-radius:8px;background:#0f766e;">
+                      <a href="${accessUrl}" style="display:inline-block;padding:13px 18px;font-size:15px;line-height:20px;color:#ffffff;text-decoration:none;font-weight:700;border-radius:8px;">Open Workforce OS</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:18px 0 0;font-size:13px;line-height:21px;color:#64748b;">If the button does not open, copy and paste this link into your browser:<br /><a href="${accessUrl}" style="color:#0f766e;text-decoration:underline;word-break:break-all;">${accessUrl}</a></p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 30px 28px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #e5edf2;">
+                  <tr>
+                    <td style="padding-top:20px;font-size:13px;line-height:21px;color:#64748b;">
+                      This message was sent because an administrator created your ${companyName} Workforce OS account. If you were not expecting this, reply to this email or contact ${escapeHtml(supportEmail)}.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+          <div style="max-width:680px;margin:14px auto 0;text-align:center;font-size:12px;line-height:18px;color:#94a3b8;">VerTechie Group LLC Workforce OS</div>
         </td>
       </tr>
     </table>

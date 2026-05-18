@@ -53,7 +53,7 @@ export function AdminUsersPanel() {
 
   const availableRoles = useMemo(() => {
     if (isSuperAdmin) return roles.filter((role) => role === "company_admin");
-    if (me?.role === "company_admin") return roles.filter((role) => ["hr", "accounts_manager", "team_lead", "employee", "recruiter"].includes(role));
+    if (me?.role === "company_admin") return roles.filter((role) => ["hr", "accounts_manager", "team_lead", "employee", "candidate", "recruiter"].includes(role));
     if (me?.role === "admin") return roles.filter((role) => role !== "super_admin");
     return [];
   }, [isSuperAdmin, me?.role]);
@@ -74,7 +74,7 @@ export function AdminUsersPanel() {
   });
   const [selectedCompanyRoles, setSelectedCompanyRoles] = useState<string[]>([]);
   const [passwordEdits, setPasswordEdits] = useState<Record<string, string>>({});
-  const [createdInvite, setCreatedInvite] = useState<{ email?: string; temporaryPassword?: string; setupInviteUrl?: string | null; emailDeliveryStatus?: string | null; emailDeliveryError?: string | null } | null>(null);
+  const [createdInvite, setCreatedInvite] = useState<{ email?: string; temporaryPassword?: string; setupInviteUrl?: string | null; emailDeliveryStatus?: string | null; emailDeliveryError?: string | null; role?: AppRole; source: "created" | "password" } | null>(null);
 
   useEffect(() => {
     if (availableRoles.length && !availableRoles.includes(form.role)) {
@@ -96,7 +96,7 @@ export function AdminUsersPanel() {
       employeeNumber: form.employeeNumber || undefined,
       companyRoleIds: selectedCompanyRoles
     });
-    setCreatedInvite({ email: form.email, temporaryPassword: form.password, setupInviteUrl: created.setupInviteUrl, emailDeliveryStatus: created.emailDeliveryStatus, emailDeliveryError: created.emailDeliveryError });
+    setCreatedInvite({ email: form.email, temporaryPassword: form.password, setupInviteUrl: created.setupInviteUrl, emailDeliveryStatus: created.emailDeliveryStatus, emailDeliveryError: created.emailDeliveryError, role: form.role, source: "created" });
     setForm({ companyName: "", fullName: "", email: "", password: "", role: "employee", employeeNumber: "", title: "", department: "" });
     setSelectedCompanyRoles([]);
   }
@@ -227,7 +227,7 @@ export function AdminUsersPanel() {
           {createUser.error && !createdInvite && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{createUser.error.message}</div>}
           {createdInvite?.setupInviteUrl && (
             <div className="rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-sm">
-              <div className="font-medium text-primary">Company admin setup invite created</div>
+              <div className="font-medium text-primary">{createdInvite.source === "password" ? "Password updated and access email prepared" : createdInvite.role === "company_admin" ? "Company admin setup invite created" : "User access invite created"}</div>
               <div className="mt-1 text-muted-foreground">Login: {createdInvite.email}</div>
               {createdInvite.emailDeliveryStatus !== "sent" && <div className="mt-1 text-muted-foreground">Temporary password: {createdInvite.temporaryPassword}</div>}
               <div className="mt-1 break-all text-muted-foreground">{createdInvite.setupInviteUrl}</div>
@@ -261,7 +261,16 @@ export function AdminUsersPanel() {
           disabled={(passwordEdits[user.id]?.length ?? 0) < 8 || updatePassword.isPending}
           type="button"
           onClick={async () => {
-            await updatePassword.mutateAsync({ userId: user.id, input: { password: passwordEdits[user.id] ?? "" } });
+            const result = await updatePassword.mutateAsync({ userId: user.id, input: { password: passwordEdits[user.id] ?? "" } });
+            setCreatedInvite({
+              email: user.email,
+              temporaryPassword: passwordEdits[user.id] ?? "",
+              setupInviteUrl: result.setupInviteUrl,
+              emailDeliveryStatus: result.emailDeliveryStatus,
+              emailDeliveryError: result.emailDeliveryError,
+              role: user.role,
+              source: "password"
+            });
             setPasswordEdits((current) => ({ ...current, [user.id]: "" }));
           }}
         >
