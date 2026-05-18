@@ -233,8 +233,16 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-medium">Primary color<Input type="color" value={form.primaryColor} onChange={(event) => setForm((current) => ({ ...current, primaryColor: event.target.value }))} /></label>
-            <label className="text-sm font-medium">Accent color<Input type="color" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /></label>
+            <ColorCodeField
+              label="Primary color"
+              value={form.primaryColor}
+              onChange={(value) => setForm((current) => ({ ...current, primaryColor: value }))}
+            />
+            <ColorCodeField
+              label="Accent color"
+              value={form.accentColor}
+              onChange={(value) => setForm((current) => ({ ...current, accentColor: value }))}
+            />
           </div>
           <div className="rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
             Workspace URL is assigned automatically from the company name: /{slugify(form.brandName)}/timesheets
@@ -269,4 +277,41 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
 
 function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "company";
+}
+
+function ColorCodeField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const normalized = isHexColor(value) ? value : "#000000";
+  return (
+    <label className="text-sm font-medium">
+      {label}
+      <div className="mt-1 grid grid-cols-[48px_1fr] gap-2">
+        <Input
+          aria-label={`${label} picker`}
+          className="h-10 cursor-pointer p-1"
+          type="color"
+          value={normalized}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <Input
+          aria-label={`${label} hex code`}
+          value={value}
+          onChange={(event) => onChange(formatHexInput(event.target.value))}
+          placeholder="#0f766e"
+          pattern="^#[0-9a-fA-F]{6}$"
+          title="Enter a 6-digit hex color, for example #0f766e"
+        />
+      </div>
+    </label>
+  );
+}
+
+function formatHexInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "#";
+  const withHash = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  return `#${withHash.slice(1).replace(/[^0-9a-fA-F]/g, "").slice(0, 6)}`;
+}
+
+function isHexColor(value: string) {
+  return /^#[0-9a-fA-F]{6}$/.test(value);
 }
