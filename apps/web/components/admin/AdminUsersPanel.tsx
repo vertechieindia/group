@@ -162,7 +162,7 @@ export function AdminUsersPanel() {
           <div className="overflow-hidden rounded-lg border border-border bg-white">
             <table className="w-full text-left text-sm">
               <thead className="bg-muted text-xs uppercase text-muted-foreground">
-                <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Primary Role</th><th className="px-4 py-3">Password</th></tr>
+                <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Primary Role</th><th className="px-4 py-3">Password</th><th className="px-4 py-3">Actions</th></tr>
               </thead>
               <tbody>
                 {(users ?? []).map((user) => (
@@ -171,9 +171,25 @@ export function AdminUsersPanel() {
                     <td className="px-4 py-3">{user.email}</td>
                     <td className="px-4 py-3">{roleLabels[user.role]}<div className="text-xs text-muted-foreground">{user.companyRoles.filter((role) => !role.isSystem && !builtInCompanyRoleSlugs.has(role.slug)).map((role) => role.name).join(", ")}</div></td>
                     <td className="px-4 py-3">{passwordControl(user)}</td>
+                    <td className="px-4 py-3">
+                      {canDeleteTenantUser(user) ? (
+                        <SecondaryButton
+                          className="h-9 whitespace-nowrap border-destructive/30 text-destructive hover:bg-destructive/10"
+                          disabled={deleteCompanyAdmin.isPending}
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Permanently delete ${user.fullName}? This removes their profile, employee record, and login credentials.`)) deleteCompanyAdmin.mutate(user.id);
+                          }}
+                        >
+                          <Trash2 className="size-4" />Delete
+                        </SecondaryButton>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Protected</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
-                {!isLoading && !users?.length && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={4}>No users found for this company.</td></tr>}
+                {!isLoading && !users?.length && <tr><td className="px-4 py-8 text-center text-muted-foreground" colSpan={5}>No users found for this company.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -278,5 +294,13 @@ export function AdminUsersPanel() {
         </SecondaryButton>
       </div>
     );
+  }
+
+  function canDeleteTenantUser(user: NonNullable<typeof users>[number]) {
+    if (user.id === me?.id) return false;
+    if (["super_admin", "admin", "company_admin"].includes(user.role)) return false;
+    if (me?.role === "company_admin") return true;
+    if (me?.role === "hr") return ["employee", "candidate", "recruiter", "marketing", "team_lead", "operations", "viewer"].includes(user.role);
+    return false;
   }
 }

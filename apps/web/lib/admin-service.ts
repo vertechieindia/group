@@ -9,6 +9,8 @@ import { sendTransactionalEmail } from "./email";
 
 const internalRoles = new Set(["super_admin", "admin", "company_admin", "hr", "accounts_manager", "recruiter", "marketing", "team_lead", "operations", "viewer", "employee", "candidate"]);
 const companyAdminCreatableRoles = new Set<AppRole>(["hr", "accounts_manager", "team_lead", "employee", "candidate", "recruiter"]);
+const protectedPermanentDeleteRoles = new Set<AppRole>(["super_admin", "admin", "company_admin"]);
+const hrPermanentDeleteRoles = new Set<AppRole>(["employee", "candidate", "recruiter", "marketing", "team_lead", "operations", "viewer"]);
 const entitySelect = "id, name, legal_name, slug, brand_name, brand_logo_url, primary_color, accent_color, portal_slug, custom_domain, company_address, company_ein, e_verify_number, company_home_state, home_state_business_id, operating_states, operating_state_registrations, company_phone, company_website, hr_email";
 
 export class AdminService {
@@ -307,6 +309,57 @@ export class AdminService {
     return { deleted: true };
   }
 
+  async deleteUserPermanently(userId: string) {
+    if (this.ctx.profile.role === "super_admin") return this.deleteCompanyAdminPermanently(userId);
+    const { data: profile, error } = await this.admin
+      .from("profiles")
+      .select("id, entity_id, email, role")
+      .eq("id", userId)
+      .is("deleted_at", null)
+      .single();
+    if (error || !profile) throw new Error("PROFILE_NOT_FOUND");
+    if (profile.id === this.ctx.profile.id) throw new Error("FORBIDDEN");
+    await assertEntityScope(this.ctx, profile.entity_id);
+
+    const actorRole = this.ctx.profile.role;
+    if (actorRole !== "company_admin" && actorRole !== "hr") throw new Error("FORBIDDEN");
+    if (protectedPermanentDeleteRoles.has(profile.role as AppRole)) throw new Error("FORBIDDEN");
+    if (actorRole === "hr" && !hrPermanentDeleteRoles.has(profile.role as AppRole)) throw new Error("FORBIDDEN");
+
+    await writeAudit(this.ctx, {
+      action: "admin.user_permanent_delete_requested",
+      resourceType: "profile",
+      resourceId: userId,
+      entityId: profile.entity_id,
+      metadata: { email: profile.email, role: profile.role }
+    });
+
+    const { data: employee } = await this.admin
+      .from("employees")
+      .select("id")
+      .eq("profile_id", userId)
+      .maybeSingle();
+    if (employee?.id) await this.deleteEmployeeDependents(employee.id);
+
+    await this.admin.from("notifications").delete().eq("recipient_id", userId);
+    await this.admin.from("profile_role_assignments").delete().eq("profile_id", userId);
+    await this.clearProfileReferences(userId);
+    await this.admin.from("employees").delete().eq("profile_id", userId);
+    const { error: profileError } = await this.admin.from("profiles").delete().eq("id", userId);
+    if (profileError) throw profileError;
+    const { error: authError } = await this.admin.auth.admin.deleteUser(userId);
+    if (authError) throw authError;
+
+    await writeAudit(this.ctx, {
+      action: "admin.user_permanently_deleted",
+      resourceType: "profile",
+      resourceId: userId,
+      entityId: profile.entity_id,
+      metadata: { email: profile.email, role: profile.role }
+    });
+    return { deleted: true };
+  }
+
   async listCompanyRoles(entityId?: string) {
     const scopedEntityId = entityId ?? this.ctx.profile.entityId;
     await assertEntityScope(this.ctx, scopedEntityId);
@@ -391,7 +444,87 @@ export class AdminService {
 
   private async assertCanManageUsers(entityId: string) {
     await assertEntityScope(this.ctx, entityId);
+    if (this.ctx.profile.role === "hr") return;
     await requirePermission(this.ctx, "user:manage:entity", entityId);
+  }
+
+  private async deleteEmployeeDependents(employeeId: string) {
+    const { data: timesheets } = await this.admin.from("timesheets").select("id").eq("employee_id", employeeId);
+    const timesheetIds = (timesheets ?? []).map((timesheet) => timesheet.id);
+    if (timesheetIds.length) {
+      await this.admin.from("timesheet_activity").delete().in("timesheet_id", timesheetIds);
+      await this.admin.from("timesheet_attachments").delete().in("timesheet_id", timesheetIds);
+      await this.admin.from("timesheet_entries").delete().in("timesheet_id", timesheetIds);
+      await this.admin.from("timesheets").delete().in("id", timesheetIds);
+    }
+
+    await this.admin.from("project_assignments").delete().eq("employee_id", employeeId);
+    await this.admin.from("learning_assignments").delete().eq("employee_id", employeeId);
+    await this.admin.from("discord_learning_group_members").delete().eq("employee_id", employeeId);
+    await this.admin.from("offer_letters").delete().eq("employee_id", employeeId);
+    await this.admin.from("onboarding_invites").delete().eq("employee_id", employeeId);
+    await this.admin.from("productivity_logs").delete().eq("employee_id", employeeId);
+    await this.admin.from("attendance").delete().eq("employee_id", employeeId);
+    await this.admin.from("work_sessions").delete().eq("employee_id", employeeId);
+    await this.admin.from("break_sessions").delete().eq("employee_id", employeeId);
+    await this.admin.from("client_assignments").delete().eq("employee_id", employeeId);
+    await this.admin.from("employees").update({ supervisor_id: null, manager_id: null }).or(`supervisor_id.eq.${employeeId},manager_id.eq.${employeeId}`);
+    await this.admin.from("departments").update({ leader_id: null }).eq("leader_id", employeeId);
+    await this.admin.from("teams").update({ lead_id: null }).eq("lead_id", employeeId);
+  }
+
+  private async clearProfileReferences(userId: string) {
+    const tables = [
+      "business_entities",
+      "employees",
+      "company_roles",
+      "profile_role_assignments",
+      "permissions",
+      "role_permissions",
+      "timesheets",
+      "timesheet_entries",
+      "timesheet_attachments",
+      "timesheet_activity",
+      "notifications",
+      "audit_logs",
+      "departments",
+      "teams",
+      "jobs",
+      "job_applications",
+      "candidates",
+      "evaluations",
+      "offer_letters",
+      "onboarding_invites",
+      "onboarding_sessions",
+      "onboarding_form_templates",
+      "learning_materials",
+      "learning_assignments",
+      "discord_learning_groups",
+      "discord_learning_group_members",
+      "project_assignments",
+      "client_invoices",
+      "productivity_logs",
+      "attendance",
+      "work_sessions",
+      "break_sessions"
+    ];
+
+    await Promise.all(tables.flatMap((table) => [
+      this.admin.from(table).update({ created_by: null }).eq("created_by", userId),
+      this.admin.from(table).update({ updated_by: null }).eq("updated_by", userId)
+    ]));
+
+    await Promise.all([
+      this.admin.from("audit_logs").update({ actor_id: null }).eq("actor_id", userId),
+      this.admin.from("timesheet_activity").update({ actor_id: null }).eq("actor_id", userId),
+      this.admin.from("timesheets").update({ reviewed_by: null }).eq("reviewed_by", userId),
+      this.admin.from("timesheets").update({ approved_by: null }).eq("approved_by", userId),
+      this.admin.from("timesheets").update({ deleted_for_refill_by: null }).eq("deleted_for_refill_by", userId),
+      this.admin.from("timesheet_attachments").update({ uploaded_by: null }).eq("uploaded_by", userId),
+      this.admin.from("offer_letters").update({ sent_by: null }).eq("sent_by", userId),
+      this.admin.from("candidates").update({ recruiter_id: null }).eq("recruiter_id", userId),
+      this.admin.from("employees").update({ recruiter_assigned_id: null }).eq("recruiter_assigned_id", userId)
+    ]);
   }
 
   private assertCanCreateRole(role: AppRole) {
