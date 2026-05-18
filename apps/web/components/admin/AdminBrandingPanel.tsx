@@ -40,6 +40,8 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
 
   useEffect(() => {
     if (!data) return;
+    const homeState = normalizeStateCode(data.companyHomeState) || "KS";
+    const operatingStates = compactStrings((data.operatingStates?.length ? data.operatingStates : [homeState]).map(normalizeStateCode));
     setForm({
       brandName: data.brandName || data.name,
       brandLogoUrl: data.brandLogoUrl || "",
@@ -49,10 +51,12 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
       companyAddress: data.companyAddress || "",
       companyEin: data.companyEin || "",
       eVerifyNumber: data.eVerifyNumber || "",
-      companyHomeState: data.companyHomeState || "KS",
+      companyHomeState: homeState,
       homeStateBusinessId: data.homeStateBusinessId || "",
-      operatingStates: data.operatingStates?.length ? data.operatingStates : data.companyHomeState ? [data.companyHomeState] : [],
-      operatingStateRegistrations: data.operatingStateRegistrations || [],
+      operatingStates: Array.from(new Set([homeState, ...operatingStates])),
+      operatingStateRegistrations: (data.operatingStateRegistrations || [])
+        .map((registration) => ({ ...registration, state: normalizeStateCode(registration.state) || registration.state }))
+        .filter((registration) => registration.state.length === 2),
       companyPhone: data.companyPhone || "",
       companyWebsite: data.companyWebsite || "",
       hrEmail: data.hrEmail || ""
@@ -62,22 +66,23 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!entityId) return;
-    const operatingStates = Array.from(new Set([form.companyHomeState, ...form.operatingStates])).filter(Boolean);
+    const homeState = normalizeStateCode(form.companyHomeState) || "KS";
+    const operatingStates = compactStrings(Array.from(new Set([homeState, ...form.operatingStates.map(normalizeStateCode)])));
     await updateBranding.mutateAsync({
       entityId,
       brandName: form.brandName,
       brandLogoUrl: form.brandLogoUrl || null,
-      primaryColor: form.primaryColor,
-      accentColor: form.accentColor,
+      primaryColor: normalizeHexColor(form.primaryColor, "#0F766E"),
+      accentColor: normalizeHexColor(form.accentColor, "#F59E0B"),
       legalName: form.legalName || null,
       companyAddress: form.companyAddress || null,
       companyEin: form.companyEin || null,
       eVerifyNumber: form.eVerifyNumber || null,
-      companyHomeState: form.companyHomeState,
+      companyHomeState: homeState,
       homeStateBusinessId: form.homeStateBusinessId || null,
       operatingStates,
       operatingStateRegistrations: operatingStates
-        .filter((state) => state !== form.companyHomeState)
+        .filter((state) => state !== homeState)
         .map((state) => ({
           state,
           foreignControlNumber: form.operatingStateRegistrations.find((registration) => registration.state === state)?.foreignControlNumber || null
@@ -120,7 +125,7 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
     }
   }
 
-  const selectedOperatingStates = Array.from(new Set([form.companyHomeState, ...form.operatingStates])).filter(Boolean);
+  const selectedOperatingStates = compactStrings(Array.from(new Set([normalizeStateCode(form.companyHomeState), ...form.operatingStates.map(normalizeStateCode)])));
   const foreignOperatingStates = selectedOperatingStates.filter((state) => state !== form.companyHomeState);
 
   function updateForeignControlNumber(state: string, value: string) {
@@ -314,4 +319,21 @@ function formatHexInput(value: string) {
 
 function isHexColor(value: string) {
   return /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+function normalizeHexColor(value: string, fallback: string) {
+  return isHexColor(value) ? value.toUpperCase() : fallback;
+}
+
+function normalizeStateCode(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const byCode = US_STATES.find(([code]) => code.toLowerCase() === trimmed.toLowerCase());
+  if (byCode) return String(byCode[0]);
+  const byName = US_STATES.find(([, name]) => name.toLowerCase() === trimmed.toLowerCase());
+  return byName ? String(byName[0]) : null;
+}
+
+function compactStrings(values: Array<string | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value));
 }

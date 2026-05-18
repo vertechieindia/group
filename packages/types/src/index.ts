@@ -314,6 +314,12 @@ export const updateEmployeeLifecycleSchema = z.object({
   recruiterAssignedId: uuidSchema.optional().nullable()
 });
 
+export const terminateEmployeeSchema = z.object({
+  entityId: uuidSchema,
+  reason: z.string().trim().min(10).max(4000),
+  effectiveDate: z.string().date().optional().nullable()
+});
+
 export const createProjectAssignmentSchema = z.object({
   entityId: uuidSchema,
   employeeId: uuidSchema,
@@ -345,6 +351,7 @@ export type CreateLearningMaterialInput = z.output<typeof createLearningMaterial
 export type CreateDiscordGroupInput = z.output<typeof createDiscordGroupSchema>;
 export type UpdateLearningAssignmentInput = z.output<typeof updateLearningAssignmentSchema>;
 export type UpdateEmployeeLifecycleInput = z.output<typeof updateEmployeeLifecycleSchema>;
+export type TerminateEmployeeInput = z.output<typeof terminateEmployeeSchema>;
 export type CreateProjectAssignmentInput = z.output<typeof createProjectAssignmentSchema>;
 
 export type BusinessEntity = {
@@ -430,6 +437,8 @@ export type LifecycleEmployee = {
   entitySlug?: string | null;
   fullName: string;
   email: string;
+  role: AppRole;
+  isActive: boolean;
   employeeNumber: string;
   uniqueEmployeeCode: string | null;
   title: string | null;

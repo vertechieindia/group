@@ -17,6 +17,7 @@ import type {
   ProjectAssignment,
   SendOfferLetterInput,
   SentOfferLetter,
+  TerminateEmployeeInput,
   UpdateEmployeeLifecycleInput,
   UpdateLearningAssignmentInput
 } from "@vertechie/types";
@@ -41,7 +42,7 @@ export class LifecycleService {
 
     let query = this.admin
       .from("employees")
-      .select("id, profile_id, entity_id, employee_number, unique_employee_code, title, department, employee_type, onboarding_status, supervisor_id, client_name, project_name, updated_resume_provided, resume_status, offer_letter_status, interview_prep_status, interview_prep_count, interview_feedback, linkedin_review_status, marketing_status, marketing_technology, candidate_status, recruiter_assigned_id, profiles!employees_profile_id_fkey(full_name, email), business_entities!employees_entity_id_fkey(name, slug)")
+      .select("id, profile_id, entity_id, employee_number, unique_employee_code, title, department, employee_type, onboarding_status, supervisor_id, client_name, project_name, updated_resume_provided, resume_status, offer_letter_status, interview_prep_status, interview_prep_count, interview_feedback, linkedin_review_status, marketing_status, marketing_technology, candidate_status, recruiter_assigned_id, profiles!employees_profile_id_fkey(full_name, email, role, is_active), business_entities!employees_entity_id_fkey(name, slug)")
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
     if (!listAllCompanies) query = query.eq("entity_id", scopedEntityId);
@@ -54,7 +55,9 @@ export class LifecycleService {
       ? await this.admin.from("profiles").select("id, full_name").in("id", recruiterIds)
       : { data: [] };
     const recruiterNames = new Map((recruiters ?? []).map((profile: any) => [profile.id, profile.full_name]));
-    return (data ?? []).map((row: any) => ({
+    return (data ?? [])
+      .filter((row: any) => ["employee", "candidate"].includes(row.profiles?.role))
+      .map((row: any) => ({
       id: row.id,
       profileId: row.profile_id,
       entityId: row.entity_id,
@@ -62,6 +65,8 @@ export class LifecycleService {
       entitySlug: row.business_entities?.slug ?? null,
       fullName: row.profiles?.full_name ?? "Employee",
       email: row.profiles?.email ?? "",
+      role: row.profiles?.role ?? "employee",
+      isActive: row.profiles?.is_active !== false,
       employeeNumber: row.employee_number,
       uniqueEmployeeCode: row.unique_employee_code,
       title: row.title,
@@ -134,6 +139,107 @@ export class LifecycleService {
 
     await writeAudit(this.ctx, { action: "employee.lifecycle_updated", resourceType: "employee", resourceId: data.id, entityId: input.entityId, metadata: { employeeType: input.employeeType } });
     return (await this.listEmployees(input.entityId)).find((employee) => employee.id === input.employeeId);
+  }
+
+  async terminateEmployee(employeeId: string, input: TerminateEmployeeInput) {
+    await assertEntityScope(this.ctx, input.entityId);
+    await requirePermission(this.ctx, "employee_lifecycle:manage:entity", input.entityId);
+
+    const { data: employee, error } = await this.admin
+      .from("employees")
+      .select("id, profile_id, entity_id, employee_number, unique_employee_code, title, profiles!employees_profile_id_fkey(full_name, email), business_entities!employees_entity_id_fkey(name, brand_name, hr_email)")
+      .eq("id", employeeId)
+      .eq("entity_id", input.entityId)
+      .is("deleted_at", null)
+      .single();
+    if (error || !employee) throw new Error("EMPLOYEE_NOT_FOUND");
+
+    const effectiveDate = input.effectiveDate || new Date().toISOString().slice(0, 10);
+    const profile = relation(employee.profiles);
+    const entity = relation(employee.business_entities);
+    const fullName = profile?.full_name ?? "Employee";
+    const email = profile?.email ?? "";
+    const companyName = entity?.brand_name || entity?.name || "Company";
+
+    const [{ error: employeeUpdateError }, { error: profileUpdateError }, { error: authUpdateError }] = await Promise.all([
+      this.admin
+        .from("employees")
+        .update({
+          employment_status: "terminated",
+          onboarding_status: "terminated",
+          offer_letter_status: "terminated",
+          marketing_status: "stopped",
+          candidate_status: "stopped_marketing",
+          updated_by: this.ctx.profile.id
+        })
+        .eq("id", employeeId)
+        .eq("entity_id", input.entityId),
+      this.admin
+        .from("profiles")
+        .update({ is_active: false, updated_by: this.ctx.profile.id })
+        .eq("id", employee.profile_id),
+      this.admin.auth.admin.updateUserById(employee.profile_id, { ban_duration: "876000h" })
+    ]);
+    if (employeeUpdateError) throw employeeUpdateError;
+    if (profileUpdateError) throw profileUpdateError;
+    if (authUpdateError) throw authUpdateError;
+
+    const emailResult = await this.sendTerminationEmail({
+      to: email,
+      fullName,
+      companyName,
+      reason: input.reason,
+      effectiveDate,
+      employeeCode: employee.unique_employee_code || employee.employee_number,
+      supportEmail: entity?.hr_email || this.ctx.profile.email
+    });
+
+    await writeAudit(this.ctx, {
+      action: "employee.terminated",
+      resourceType: "employee",
+      resourceId: employeeId,
+      entityId: input.entityId,
+      metadata: { effectiveDate, reason: input.reason, emailDeliveryStatus: emailResult.emailDeliveryStatus, emailDeliveryError: emailResult.emailDeliveryError }
+    });
+    return { terminated: true, emailDeliveryStatus: emailResult.emailDeliveryStatus, emailDeliveryError: emailResult.emailDeliveryError };
+  }
+
+  private async sendTerminationEmail(input: { to: string; fullName: string; companyName: string; employeeCode: string; reason: string; effectiveDate: string; supportEmail: string }) {
+    if (!process.env.RESEND_API_KEY && !process.env.RESEND_API) {
+      return { emailDeliveryStatus: "not_configured" as const, emailDeliveryError: "RESEND_API_KEY is not configured." };
+    }
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;background:#f4f7f9;padding:28px;color:#111827">
+      <div style="max-width:680px;margin:0 auto;background:#fff;border:1px solid #dbe5ea;border-radius:14px;overflow:hidden">
+        <div style="background:#0f766e;color:#fff;padding:24px 28px">
+          <div style="font-size:20px;font-weight:700">${escapeHtml(input.companyName)}</div>
+          <div style="font-size:13px;color:#ccfbf1">Employment status notification</div>
+        </div>
+        <div style="padding:28px">
+          <h1 style="margin:0 0 16px;font-size:24px">Employment termination notice</h1>
+          <p>Hello ${escapeHtml(input.fullName)},</p>
+          <p>This notice confirms that your employment record with <strong>${escapeHtml(input.companyName)}</strong> has been marked terminated effective <strong>${escapeHtml(input.effectiveDate)}</strong>.</p>
+          <table style="width:100%;border-collapse:collapse;margin:18px 0;background:#f8fafc;border:1px solid #dbe5ea;border-radius:10px">
+            <tr><td style="padding:12px 16px;color:#64748b">Employee ID</td><td style="padding:12px 16px;font-weight:700">${escapeHtml(input.employeeCode)}</td></tr>
+            <tr><td style="padding:12px 16px;color:#64748b">Effective date</td><td style="padding:12px 16px;font-weight:700">${escapeHtml(input.effectiveDate)}</td></tr>
+          </table>
+          <p><strong>Reason or HR note:</strong></p>
+          <p style="white-space:pre-line">${escapeHtml(input.reason)}</p>
+          <p>Your Workforce OS account access has been deactivated. For final documents, payroll questions, or corrections, contact ${escapeHtml(input.supportEmail)}.</p>
+        </div>
+      </div>
+    </div>`;
+    const text = `Employment termination notice\n\nHello ${input.fullName},\n\nYour employment record with ${input.companyName} has been marked terminated effective ${input.effectiveDate}.\n\nEmployee ID: ${input.employeeCode}\nReason or HR note: ${input.reason}\n\nYour Workforce OS account access has been deactivated. Contact ${input.supportEmail} for final documents or payroll questions.`;
+    try {
+      await sendTransactionalEmail({
+        to: input.to,
+        subject: `${input.companyName} employment termination notice`,
+        html,
+        text
+      });
+      return { emailDeliveryStatus: "sent" as const, emailDeliveryError: null };
+    } catch (error) {
+      return { emailDeliveryStatus: "failed" as const, emailDeliveryError: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   async listOnboardingInvites(entityId?: string): Promise<OnboardingInvite[]> {
@@ -912,6 +1018,10 @@ function mapOnboardingFormTemplate(row: any): OnboardingFormTemplate {
     version: row.version,
     createdAt: row.created_at
   };
+}
+
+function relation<T>(value: T | T[] | null | undefined): T | undefined {
+  return Array.isArray(value) ? value[0] : value ?? undefined;
 }
 
 function mapProjectAssignment(row: any): ProjectAssignment {

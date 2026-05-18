@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Save, UserRoundCog } from "lucide-react";
+import Link from "next/link";
+import { Building2, ExternalLink, Save, UserRoundCog, X } from "lucide-react";
 import { Badge, Button, Card, Input, Select, Textarea } from "@vertechie/ui";
 import type { LifecycleEmployee } from "@vertechie/types";
 import { useCurrentUser } from "@/features/admin/hooks";
-import { useLifecycleEmployees, useUpdateLifecycleEmployee } from "@/features/lifecycle/hooks";
+import { useLifecycleEmployees, useTerminateEmployee, useUpdateLifecycleEmployee } from "@/features/lifecycle/hooks";
 
 const employeeTypeLabel: Record<LifecycleEmployee["employeeType"], string> = {
   unpaid: "Unpaid",
@@ -89,11 +90,20 @@ export function EmployeesLifecyclePanel() {
   const entityId = isSuperAdmin ? undefined : me?.entity.id;
   const { data: employees, isLoading } = useLifecycleEmployees(entityId, Boolean(me));
   const updateEmployee = useUpdateLifecycleEmployee();
+  const terminateEmployee = useTerminateEmployee();
   const [selectedId, setSelectedId] = useState("");
+  const [filters, setFilters] = useState({ marketingStatus: "all", candidateStatus: "all", offerLetterStatus: "all" });
+  const [terminationReason, setTerminationReason] = useState("");
   const selected = useMemo(() => employees?.find((employee) => employee.id === selectedId), [employees, selectedId]);
+  const filteredEmployees = useMemo(() => (employees ?? []).filter((employee) => {
+    if (filters.marketingStatus !== "all" && employee.marketingStatus !== filters.marketingStatus) return false;
+    if (filters.candidateStatus !== "all" && employee.candidateStatus !== filters.candidateStatus) return false;
+    if (filters.offerLetterStatus !== "all" && employee.offerLetterStatus !== filters.offerLetterStatus) return false;
+    return true;
+  }), [employees, filters]);
   const companyGroups = useMemo(() => {
     const groups = new Map<string, { id: string; name: string; slug: string | null; employees: LifecycleEmployee[] }>();
-    for (const employee of employees ?? []) {
+    for (const employee of filteredEmployees) {
       const id = employee.entityId;
       const existing = groups.get(id);
       if (existing) {
@@ -108,7 +118,7 @@ export function EmployeesLifecyclePanel() {
       }
     }
     return Array.from(groups.values()).sort((left, right) => left.name.localeCompare(right.name));
-  }, [employees, me?.entity.name]);
+  }, [filteredEmployees, me?.entity.name]);
   const [draft, setDraft] = useState({
     employeeType: "paid_project",
     supervisorId: "",
@@ -179,6 +189,20 @@ export function EmployeesLifecyclePanel() {
           <h1 className="text-2xl font-semibold">Employee Lifecycle</h1>
           <p className="text-sm text-muted-foreground">Company-scoped employee profiles, onboarding status, supervisor assignment, and workforce category.</p>
         </div>
+        <Card className="grid gap-3 p-4 md:grid-cols-3">
+          <label className="text-sm font-medium">Marketing status<Select value={filters.marketingStatus} onChange={(event) => setFilters((current) => ({ ...current, marketingStatus: event.target.value }))}>
+            <option value="all">All marketing statuses</option>
+            {marketingStatuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </Select></label>
+          <label className="text-sm font-medium">Candidate status<Select value={filters.candidateStatus} onChange={(event) => setFilters((current) => ({ ...current, candidateStatus: event.target.value }))}>
+            <option value="all">All candidate statuses</option>
+            {candidateStatuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </Select></label>
+          <label className="text-sm font-medium">Offer letter<Select value={filters.offerLetterStatus} onChange={(event) => setFilters((current) => ({ ...current, offerLetterStatus: event.target.value }))}>
+            <option value="all">All offer letters</option>
+            {offerLetterStatuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </Select></label>
+        </Card>
         <div className="grid gap-4">
           {companyGroups.map((company) => (
             <Card className="overflow-hidden" key={company.id}>
@@ -198,8 +222,13 @@ export function EmployeesLifecyclePanel() {
                   </thead>
                   <tbody>
                     {company.employees.map((employee) => (
-                      <tr className={`cursor-pointer border-t border-border hover:bg-muted/40 ${selectedId === employee.id ? "bg-primary/5" : ""}`} key={employee.id} onClick={() => setSelectedId(employee.id)}>
-                        <td className="px-4 py-3 font-medium">{employee.fullName}<div className="text-xs text-muted-foreground">{employee.uniqueEmployeeCode || employee.employeeNumber} · {employee.email}</div></td>
+                      <tr className={`cursor-pointer border-t border-border hover:bg-muted/40 ${selectedId === employee.id ? "bg-primary/5" : ""}`} key={employee.id} onClick={() => setSelectedId((current) => current === employee.id ? "" : employee.id)}>
+                        <td className="px-4 py-3 font-medium">
+                          <Link className="inline-flex items-center gap-1 text-primary hover:underline" href={`/hr/employees/${employee.id}`} onClick={(event) => event.stopPropagation()}>
+                            {employee.fullName}<ExternalLink className="size-3" />
+                          </Link>
+                          <div className="text-xs text-muted-foreground">{employee.uniqueEmployeeCode || employee.employeeNumber} · {employee.email}{!employee.isActive ? " · terminated" : ""}</div>
+                        </td>
                         <td className="px-4 py-3">{employeeTypeLabel[employee.employeeType]}</td>
                         <td className="px-4 py-3"><OfferBadge status={employee.offerLetterStatus} /></td>
                         <td className="px-4 py-3"><StatusBadge status={employee.marketingStatus} label={labelFor(marketingStatuses, employee.marketingStatus)} /></td>
@@ -219,7 +248,10 @@ export function EmployeesLifecyclePanel() {
         </div>
       </div>
       {selected && <Card className="h-fit p-5">
-        <div className="flex items-center gap-2"><UserRoundCog className="size-5 text-primary" /><h2 className="font-semibold">Lifecycle controls</h2></div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2"><UserRoundCog className="size-5 text-primary" /><h2 className="font-semibold">Lifecycle controls</h2></div>
+          <button className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" type="button" onClick={() => setSelectedId("")} aria-label="Close lifecycle controls"><X className="size-4" /></button>
+        </div>
           <form className="mt-4 grid gap-3" onSubmit={submit}>
             <div className="rounded-md border border-border bg-background p-3 text-sm">
               <div className="font-semibold">{selected.fullName}</div>
@@ -264,6 +296,25 @@ export function EmployeesLifecyclePanel() {
             {updateEmployee.error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{updateEmployee.error.message}</div>}
             <Button disabled={updateEmployee.isPending} type="submit"><Save className="size-4" />Save employee lifecycle</Button>
           </form>
+          <div className="mt-5 grid gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+            <div className="font-semibold text-destructive">Terminate employee access</div>
+            <p className="text-sm text-muted-foreground">This deactivates the user profile, blocks login, marks lifecycle and offer status as terminated, and emails the termination notice.</p>
+            <Textarea className="min-h-24" placeholder="Termination reason and final HR notes" value={terminationReason} onChange={(event) => setTerminationReason(event.target.value)} />
+            <Button
+              className="bg-destructive hover:bg-destructive/90"
+              disabled={terminationReason.trim().length < 10 || terminateEmployee.isPending || !selected.isActive}
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Terminate ${selected.fullName}? Their account login will be disabled.`)) {
+                  terminateEmployee.mutate({ employeeId: selected.id, input: { entityId: selected.entityId, reason: terminationReason, effectiveDate: new Date().toISOString().slice(0, 10) } });
+                  setTerminationReason("");
+                }
+              }}
+            >
+              {selected.isActive ? "Terminate and send notice" : "Employee already terminated"}
+            </Button>
+            {terminateEmployee.error && <div className="rounded-md border border-destructive/30 bg-white px-3 py-2 text-sm text-destructive">{terminateEmployee.error.message}</div>}
+          </div>
       </Card>}
     </div>
   );

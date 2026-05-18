@@ -19,6 +19,7 @@ import type {
   ProjectAssignment,
   SendOfferLetterInput,
   SentOfferLetter,
+  TerminateEmployeeInput,
   UpdateLearningAssignmentInput,
   UpdateEmployeeLifecycleInput
 } from "@vertechie/types";
@@ -40,6 +41,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const lifecycleApi = {
   employees: (entityId?: string) => request<LifecycleEmployee[]>(`/api/hr/employees${queryString({ entityId })}`),
   updateEmployee: (input: UpdateEmployeeLifecycleInput) => request<LifecycleEmployee>("/api/hr/employees", { method: "PATCH", body: JSON.stringify(input) }),
+  terminateEmployee: (employeeId: string, input: TerminateEmployeeInput) => request<{ terminated: boolean; emailDeliveryStatus?: string; emailDeliveryError?: string | null }>(`/api/hr/employees/${employeeId}/terminate`, { method: "PATCH", body: JSON.stringify(input) }),
   onboardingInvites: (entityId?: string) => request<OnboardingInvite[]>(`/api/hr/onboarding-invites${queryString({ entityId })}`),
   createOnboardingInvite: (input: CreateOnboardingInviteInput) => request<OnboardingInvite>("/api/hr/onboarding-invites", { method: "POST", body: JSON.stringify(input) }),
   onboardingFormTemplates: (entityId?: string) => request<OnboardingFormTemplate[]>(`/api/hr/onboarding-form-templates${queryString({ entityId })}`),

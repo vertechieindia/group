@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateDiscordGroupInput, CreateLearningMaterialInput, CreateOfferTemplateInput, CreateOnboardingFormTemplateInput, CreateOnboardingInviteInput, CreateProjectAssignmentInput, SendOfferLetterInput, UpdateEmployeeLifecycleInput, UpdateLearningAssignmentInput } from "@vertechie/types";
+import type { CreateDiscordGroupInput, CreateLearningMaterialInput, CreateOfferTemplateInput, CreateOnboardingFormTemplateInput, CreateOnboardingInviteInput, CreateProjectAssignmentInput, SendOfferLetterInput, TerminateEmployeeInput, UpdateEmployeeLifecycleInput, UpdateLearningAssignmentInput } from "@vertechie/types";
 import { lifecycleApi } from "./api";
 
 export function useLifecycleEmployees(entityId?: string, enabled = true) {
@@ -13,6 +13,14 @@ export function useUpdateLifecycleEmployee() {
   return useMutation({
     mutationFn: (input: UpdateEmployeeLifecycleInput) => lifecycleApi.updateEmployee(input),
     onSuccess: (_, input) => queryClient.invalidateQueries({ queryKey: ["lifecycle-employees", input.entityId] })
+  });
+}
+
+export function useTerminateEmployee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, input }: { employeeId: string; input: TerminateEmployeeInput }) => lifecycleApi.terminateEmployee(employeeId, input),
+    onSuccess: (_, variables) => queryClient.invalidateQueries({ queryKey: ["lifecycle-employees", variables.input.entityId] })
   });
 }
 
