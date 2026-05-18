@@ -255,6 +255,12 @@ export const sendOfferLetterSchema = z.object({
   companyEin: z.string().trim().max(40).optional().nullable(),
   eVerifyNumber: z.string().trim().max(80).optional().nullable(),
   companyHomeState: z.string().trim().length(2),
+  homeStateBusinessId: z.string().trim().max(120).optional().nullable(),
+  operatingStates: z.array(z.string().trim().length(2)).max(60).default([]),
+  operatingStateRegistrations: z.array(z.object({
+    state: z.string().trim().length(2),
+    foreignControlNumber: z.string().trim().max(120).optional().nullable()
+  })).max(60).default([]),
   companyLogoUrl: z.string().trim().url().optional().nullable(),
   duties: z.array(z.string().trim().min(2).max(500)).min(1).max(20),
   draftBody: z.string().trim().min(100),

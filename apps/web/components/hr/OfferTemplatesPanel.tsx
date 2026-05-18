@@ -26,6 +26,8 @@ const REQUIRED_FIELDS = [
   "signerTitle",
   "signerEmail",
   "companyHomeState",
+  "homeStateBusinessId",
+  "operatingStateRegistrations",
   "companyEin",
   "eVerifyNumber"
 ];
@@ -50,9 +52,12 @@ EMPLOYER PROFILE
 
 Legal Employer: {{companyName}}
 Home State: {{companyHomeStateName}}
+Home State Business ID: {{homeStateBusinessId}}
 Principal Address: {{companyAddress}}
 Federal EIN: {{companyEin}}
 E-Verify Number: {{eVerifyNumber}}
+Foreign LLC Registrations:
+{{foreignRegistrationSummary}}
 HR Contact: {{signerEmail}}
 
 OFFER SUMMARY
@@ -161,6 +166,9 @@ type OfferForm = {
   companyEin: string;
   eVerifyNumber: string;
   companyHomeState: string;
+  homeStateBusinessId: string;
+  operatingStates: string[];
+  operatingStateRegistrations: Array<{ state: string; foreignControlNumber: string | null }>;
   companyLogoUrl: string;
   duties: string;
   emailSubject: string;
@@ -211,6 +219,9 @@ export function OfferTemplatesPanel() {
     companyEin: "",
     eVerifyNumber: "",
     companyHomeState: "KS",
+    homeStateBusinessId: "",
+    operatingStates: [],
+    operatingStateRegistrations: [],
     companyLogoUrl: me?.entity.brandLogoUrl || "",
     duties: "",
     emailSubject: "",
@@ -234,6 +245,9 @@ export function OfferTemplatesPanel() {
       companyEin: company.companyEin || current.companyEin,
       eVerifyNumber: company.eVerifyNumber || current.eVerifyNumber,
       companyHomeState: company.companyHomeState || current.companyHomeState || "KS",
+      homeStateBusinessId: company.homeStateBusinessId || current.homeStateBusinessId,
+      operatingStates: company.operatingStates?.length ? company.operatingStates : current.operatingStates,
+      operatingStateRegistrations: company.operatingStateRegistrations?.length ? company.operatingStateRegistrations : current.operatingStateRegistrations,
       companyLogoUrl: company.brandLogoUrl || current.companyLogoUrl || ""
     }));
   }, [branding, defaultCompany, me]);
@@ -320,7 +334,7 @@ export function OfferTemplatesPanel() {
   }
 
   function generateDraft() {
-    const body = renderTemplate(selectedTemplate?.templateBody || DEFAULT_TEMPLATE, offerForm);
+    const body = renderTemplate(withRegistrationPlaceholders(selectedTemplate?.templateBody || DEFAULT_TEMPLATE), offerForm);
     setDraft(body);
     if (!offerForm.emailSubject) setOffer("emailSubject", `Formal offer from ${offerForm.companyName || defaultCompany}`);
     if (!offerForm.emailMessage) {
@@ -358,6 +372,9 @@ export function OfferTemplatesPanel() {
       companyEin: offerForm.companyEin || null,
       eVerifyNumber: offerForm.eVerifyNumber || null,
       companyHomeState: offerForm.companyHomeState,
+      homeStateBusinessId: offerForm.homeStateBusinessId || null,
+      operatingStates: offerForm.operatingStates,
+      operatingStateRegistrations: offerForm.operatingStateRegistrations,
       companyLogoUrl: offerForm.companyLogoUrl || null,
       duties: offerForm.duties.split("\n").map((line) => line.trim()).filter(Boolean),
       draftBody: draft,
@@ -541,6 +558,8 @@ function renderTemplate(template: string, form: OfferForm) {
     companyEin: form.companyEin || "To be confirmed",
     eVerifyNumber: form.eVerifyNumber || "To be confirmed",
     companyHomeStateName: stateName(form.companyHomeState),
+    homeStateBusinessId: form.homeStateBusinessId || "To be confirmed",
+    foreignRegistrationSummary: foreignRegistrationSummary(form),
     federalCompliance: federalComplianceText(form.companyName, form.eVerifyNumber),
     stateCompliance: stateComplianceText(form.companyHomeState, form.companyName),
     signerName: form.signerName,
@@ -555,6 +574,31 @@ function renderTemplate(template: string, form: OfferForm) {
   };
 
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => replacements[key] ?? "");
+}
+
+function withRegistrationPlaceholders(template: string) {
+  if (template.includes("{{homeStateBusinessId}}") || template.includes("{{foreignRegistrationSummary}}")) return template;
+  const registrationBlock = `Home State Business ID: {{homeStateBusinessId}}
+Foreign LLC Registrations:
+{{foreignRegistrationSummary}}`;
+  if (template.includes("E-Verify Number: {{eVerifyNumber}}")) {
+    return template.replace("E-Verify Number: {{eVerifyNumber}}", `E-Verify Number: {{eVerifyNumber}}\n${registrationBlock}`);
+  }
+  if (template.includes("EMPLOYER PROFILE")) {
+    return template.replace("EMPLOYER PROFILE", `EMPLOYER PROFILE\n\n${registrationBlock}`);
+  }
+  return `${template}\n\nCOMPANY STATE REGISTRATIONS\n\n${registrationBlock}`;
+}
+
+function foreignRegistrationSummary(form: OfferForm) {
+  const foreignStates = (form.operatingStates.length ? form.operatingStates : [form.companyHomeState]).filter((state) => state !== form.companyHomeState);
+  if (!foreignStates.length) return "No foreign LLC operating-state registrations listed.";
+  return foreignStates
+    .map((state) => {
+      const registration = form.operatingStateRegistrations.find((item) => item.state === state);
+      return `- ${stateName(state)}: Foreign LLC control number ${registration?.foreignControlNumber || "To be confirmed"}`;
+    })
+    .join("\n");
 }
 
 function firstName(value: string) {

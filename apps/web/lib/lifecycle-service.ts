@@ -316,6 +316,27 @@ export class LifecycleService {
       .single();
     if (templateError || !template) throw new Error("OFFER_TEMPLATE_NOT_FOUND");
 
+    const companyProfile = await this.getOfferCompanyProfile(input.entityId);
+    const offerInput: SendOfferLetterInput = {
+      ...input,
+      companyName: companyProfile.legal_name || companyProfile.brand_name || companyProfile.name || input.companyName,
+      companyAddress: companyProfile.company_address || input.companyAddress,
+      companyWebsite: companyProfile.company_website || input.companyWebsite,
+      companyPhone: companyProfile.company_phone || input.companyPhone,
+      companyEin: companyProfile.company_ein || input.companyEin,
+      eVerifyNumber: companyProfile.e_verify_number || input.eVerifyNumber,
+      companyHomeState: companyProfile.company_home_state || input.companyHomeState,
+      homeStateBusinessId: companyProfile.home_state_business_id || input.homeStateBusinessId,
+      operatingStates: companyProfile.operating_states?.length ? companyProfile.operating_states : input.operatingStates,
+      operatingStateRegistrations: Array.isArray(companyProfile.operating_state_registrations)
+        ? companyProfile.operating_state_registrations.map((registration: any) => ({
+          state: registration.state,
+          foreignControlNumber: registration.foreignControlNumber ?? registration.foreign_control_number ?? null
+        }))
+        : input.operatingStateRegistrations,
+      companyLogoUrl: companyProfile.brand_logo_url || input.companyLogoUrl
+    };
+
     const { data: existingCandidate } = await this.admin
       .from("candidates")
       .select("id")
@@ -350,16 +371,19 @@ export class LifecycleService {
           startDate: input.startDate,
           workLocation: input.workLocation,
           reportsTo: input.reportsTo,
-          companyEin: input.companyEin,
-          eVerifyNumber: input.eVerifyNumber,
-          companyHomeState: input.companyHomeState
+          companyEin: offerInput.companyEin,
+          eVerifyNumber: offerInput.eVerifyNumber,
+          companyHomeState: offerInput.companyHomeState,
+          homeStateBusinessId: offerInput.homeStateBusinessId,
+          operatingStates: offerInput.operatingStates,
+          operatingStateRegistrations: offerInput.operatingStateRegistrations
         }
       })
       .select("id")
       .single();
     if (offerError) throw offerError;
 
-    const docx = await buildOfferLetterDocx(input);
+    const docx = await buildOfferLetterDocx(offerInput);
     const filename = `offer-letter-${slugify(input.candidateName)}.docx`;
     const storagePath = `${input.entityId}/${candidate.id}/${offer.id}/${filename}`;
     const { error: uploadError } = await this.admin.storage
@@ -416,6 +440,16 @@ export class LifecycleService {
       docxPath: storagePath,
       sentAt
     };
+  }
+
+  private async getOfferCompanyProfile(entityId: string) {
+    const { data, error } = await this.admin
+      .from("business_entities")
+      .select("name, legal_name, brand_name, brand_logo_url, company_address, company_phone, company_website, company_ein, e_verify_number, company_home_state, home_state_business_id, operating_states, operating_state_registrations")
+      .eq("id", entityId)
+      .single();
+    if (error) throw error;
+    return data as any;
   }
 
   private createOfferCandidate(input: SendOfferLetterInput) {

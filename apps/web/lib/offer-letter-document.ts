@@ -81,7 +81,8 @@ function buildHeader(input: SendOfferLetterInput, logo: LogoData | null) {
                 children: [
                   new Paragraph({ children: [new TextRun({ text: input.companyName, bold: true, size: 30 })] }),
                   new Paragraph({ children: [new TextRun({ text: compact([input.companyAddress, input.companyPhone, input.signerEmail, input.companyWebsite].filter(Boolean).join(" | ")), size: 18, color: "475569" })] }),
-                  new Paragraph({ children: [new TextRun({ text: compact(["EIN", input.companyEin, "E-Verify", input.eVerifyNumber, "Home State", stateName(input.companyHomeState)].filter(Boolean).join(" | ")), size: 18, color: "475569" })] })
+                  new Paragraph({ children: [new TextRun({ text: compact(["EIN", input.companyEin, "E-Verify", input.eVerifyNumber, "Home State", stateName(input.companyHomeState), "Business ID", input.homeStateBusinessId].filter(Boolean).join(" | ")), size: 18, color: "475569" })] }),
+                  ...registrationHeaderLines(input)
                 ]
               })
             ]
@@ -142,7 +143,8 @@ function summaryTable(input: SendOfferLetterInput) {
     ["Compensation", input.compensation, "Pay Frequency", input.payFrequency],
     ["Department", input.department || "Not specified", "Reports To", input.reportsTo],
     ["Work Location", input.workLocation, "Offer Expires", input.expiryDate ? formatDate(input.expiryDate) : "Not specified"],
-    ["Company Home State", stateName(input.companyHomeState), "E-Verify", input.eVerifyNumber || "Not specified"]
+    ["Company Home State", stateName(input.companyHomeState), "Home State Business ID", input.homeStateBusinessId || "Not specified"],
+    ["E-Verify", input.eVerifyNumber || "Not specified", "Foreign LLC Registrations", foreignRegistrationSummary(input)]
   ];
 
   return new Table({
@@ -158,6 +160,30 @@ function summaryTable(input: SendOfferLetterInput) {
       })
     )
   });
+}
+
+function registrationHeaderLines(input: SendOfferLetterInput) {
+  const foreignStates = operatingForeignStates(input);
+  if (!foreignStates.length) return [];
+  return [
+    new Paragraph({
+      children: [new TextRun({ text: compact(foreignStates.map((state) => `${stateName(state)} Foreign LLC Control #: ${controlNumberFor(input, state)}`).join(" | ")), size: 18, color: "475569" })]
+    })
+  ];
+}
+
+function foreignRegistrationSummary(input: SendOfferLetterInput) {
+  const foreignStates = operatingForeignStates(input);
+  if (!foreignStates.length) return "None listed";
+  return foreignStates.map((state) => `${stateName(state)}: ${controlNumberFor(input, state)}`).join("; ");
+}
+
+function operatingForeignStates(input: SendOfferLetterInput) {
+  return (input.operatingStates.length ? input.operatingStates : [input.companyHomeState]).filter((state) => state !== input.companyHomeState);
+}
+
+function controlNumberFor(input: SendOfferLetterInput, state: string) {
+  return input.operatingStateRegistrations.find((registration) => registration.state === state)?.foreignControlNumber || "Not specified";
 }
 
 type LogoData = { type: "png" | "jpg" | "gif" | "bmp"; data: Buffer };
