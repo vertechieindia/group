@@ -6,7 +6,7 @@ import { ImageUp, Palette, Save } from "lucide-react";
 import { Button, Card, Input } from "@vertechie/ui";
 import { useBranding, useCurrentUser, useUpdateBranding } from "@/features/admin/hooks";
 import { createBrowserSupabaseClient } from "@/features/timesheets/supabase-browser";
-import { US_STATES } from "@/lib/offer-compliance";
+import { stateName, US_STATES } from "@/lib/offer-compliance";
 
 export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean }) {
   const { data: me } = useCurrentUser();
@@ -25,6 +25,7 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
     companyEin: "",
     eVerifyNumber: "",
     companyHomeState: "KS",
+    operatingStates: ["KS"],
     companyPhone: "",
     companyWebsite: "",
     hrEmail: ""
@@ -42,6 +43,7 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
       companyEin: data.companyEin || "",
       eVerifyNumber: data.eVerifyNumber || "",
       companyHomeState: data.companyHomeState || "KS",
+      operatingStates: data.operatingStates?.length ? data.operatingStates : data.companyHomeState ? [data.companyHomeState] : [],
       companyPhone: data.companyPhone || "",
       companyWebsite: data.companyWebsite || "",
       hrEmail: data.hrEmail || ""
@@ -62,6 +64,7 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
       companyEin: form.companyEin || null,
       eVerifyNumber: form.eVerifyNumber || null,
       companyHomeState: form.companyHomeState,
+      operatingStates: Array.from(new Set([form.companyHomeState, ...form.operatingStates])).filter(Boolean),
       companyPhone: form.companyPhone || null,
       companyWebsite: form.companyWebsite || null,
       hrEmail: form.hrEmail || null
@@ -139,6 +142,40 @@ export function AdminBrandingPanel({ setupMode = false }: { setupMode?: boolean 
             <label className="text-sm font-medium">Company phone<Input required={setupMode} value={form.companyPhone} onChange={(event) => setForm((current) => ({ ...current, companyPhone: event.target.value }))} /></label>
             <label className="text-sm font-medium">Company website<Input required={setupMode} value={form.companyWebsite} onChange={(event) => setForm((current) => ({ ...current, companyWebsite: event.target.value }))} placeholder="https://company.com" /></label>
             <label className="text-sm font-medium">HR email<Input required={setupMode} inputMode="email" value={form.hrEmail} onChange={(event) => setForm((current) => ({ ...current, hrEmail: event.target.value }))} placeholder="hr@company.com" /></label>
+          </div>
+          <div className="grid gap-2 rounded-lg border border-border bg-background/70 p-3">
+            <div>
+              <div className="text-sm font-medium">Operating states</div>
+              <div className="text-xs text-muted-foreground">Add every state where this company may hire, run payroll, or manage employees.</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Array.from(new Set([form.companyHomeState, ...form.operatingStates])).filter(Boolean).map((code) => (
+                <span key={code} className="rounded-full border border-border bg-white px-2.5 py-1 text-xs font-medium">
+                  {stateName(code)}
+                </span>
+              ))}
+            </div>
+            <div className="grid max-h-48 gap-2 overflow-auto rounded-md border border-border bg-white p-3 sm:grid-cols-2">
+              {US_STATES.map(([code, name]) => {
+                const checked = form.companyHomeState === code || form.operatingStates.includes(code);
+                return (
+                  <label key={code} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={form.companyHomeState === code}
+                      onChange={(event) => setForm((current) => ({
+                        ...current,
+                        operatingStates: event.target.checked
+                          ? Array.from(new Set([...current.operatingStates, code]))
+                          : current.operatingStates.filter((state) => state !== code)
+                      }))}
+                    />
+                    {name}
+                  </label>
+                );
+              })}
+            </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-medium">Primary color<Input type="color" value={form.primaryColor} onChange={(event) => setForm((current) => ({ ...current, primaryColor: event.target.value }))} /></label>

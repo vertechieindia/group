@@ -9,7 +9,7 @@ import { sendTransactionalEmail } from "./email";
 
 const internalRoles = new Set(["super_admin", "admin", "company_admin", "hr", "accounts_manager", "recruiter", "marketing", "team_lead", "operations", "viewer", "employee"]);
 const companyAdminCreatableRoles = new Set<AppRole>(["hr", "accounts_manager", "team_lead", "employee", "recruiter"]);
-const entitySelect = "id, name, legal_name, slug, brand_name, brand_logo_url, primary_color, accent_color, portal_slug, custom_domain, company_address, company_ein, e_verify_number, company_home_state, company_phone, company_website, hr_email";
+const entitySelect = "id, name, legal_name, slug, brand_name, brand_logo_url, primary_color, accent_color, portal_slug, custom_domain, company_address, company_ein, e_verify_number, company_home_state, operating_states, company_phone, company_website, hr_email";
 
 export class AdminService {
   private readonly admin = createAdminSupabaseClient();
@@ -356,6 +356,7 @@ export class AdminService {
         company_ein: input.companyEin,
         e_verify_number: input.eVerifyNumber,
         company_home_state: input.companyHomeState,
+        operating_states: input.operatingStates,
         company_phone: input.companyPhone,
         company_website: input.companyWebsite,
         hr_email: input.hrEmail,
@@ -613,6 +614,7 @@ function mapEntity(row: any): BusinessEntity {
     companyEin: row.company_ein,
     eVerifyNumber: row.e_verify_number,
     companyHomeState: row.company_home_state,
+    operatingStates: row.operating_states ?? [],
     companyPhone: row.company_phone,
     companyWebsite: row.company_website,
     hrEmail: row.hr_email
